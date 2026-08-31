@@ -8,21 +8,33 @@ import {
 import type { Role } from "./auth";
 
 const KEYS = {
-  seeded: "pcpp_seeded_v2",
-  projects: "pcpp_projects_v2",
-  users: "pcpp_users_v2",
-  notifications: "pcpp_notifications_v2",
-  saved: "pcpp_saved_v2",
-  interests: "pcpp_interests_v2",
+  seeded: "pcpp_seeded_v3",
+  projects: "pcpp_projects_v3",
+  users: "pcpp_users_v3",
+  notifications: "pcpp_notifications_v3",
+  saved: "pcpp_saved_v3",
+  interests: "pcpp_interests_v3",
 } as const;
 
-export interface StatusEvent { status: ProjectStatus; note: string; date: string; by: string }
-export interface ProgressUpdate { id: number; date: string; author: string; text: string }
+export interface ProjectAttachment {
+  id: number | string;
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+  uploadedBy: string;
+  date: string;
+}
+export interface StatusEvent { status: ProjectStatus | string; note: string; date: string; by: string; attachments?: ProjectAttachment[] }
+export interface ProgressUpdate { id: number | string; date: string; author: string; text: string; attachments?: ProjectAttachment[] }
 
 export interface StoreProject extends PipelineProject {
   statusHistory: StatusEvent[];
   progressUpdates: ProgressUpdate[];
+  attachments: ProjectAttachment[];
   summary: string;
+  // Backend record id once this project has been created/synced via the real API.
+  apiId?: string;
 }
 
 export interface AppUser {
@@ -52,6 +64,7 @@ export interface InvestorInterest {
   investorEmail: string;
   investorName: string;
   message: string;
+  commitmentUSD?: number;
   status: "Awaiting response" | "In discussion" | "Connected" | "Declined";
   createdAt: string;
   timeline: { note: string; date: string; by: string }[];
@@ -90,6 +103,7 @@ function seedProjects(): StoreProject[] {
     progressUpdates: p.status === "Approved" ? [
       { id: p.id * 10 + 1, date: p.updated, author: p.submittedBy, text: "Procurement of core works is on schedule; community consultations completed." },
     ] : [],
+    attachments: [],
   }));
 }
 

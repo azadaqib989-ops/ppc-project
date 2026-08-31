@@ -5,15 +5,29 @@ export type ProjectStatus = "Draft" | "Submitted" | "Under Review" | "Approved" 
 export interface PipelineProject {
   id: number;
   title: string;
+  imageUrl?: string;
   province: string;
+  district?: string;
   sector: string;
   wef: ("Water" | "Energy" | "Food")[];
   status: ProjectStatus;
   costUSD: number; // total project cost
   fundingGapUSD: number;
+  availableFundingUSD?: number;
+  primarySector?: string;
+  secondarySector?: string;
+  sdgs?: string[];
+  coFinancingUSD?: number; // funding already secured / co-financed
   beneficiaries: number;
   jobs: number;
   readiness: number; // 0-100
+  startDate?: string; // ISO date — planned/actual start
+  endDate?: string; // ISO date — planned completion
+  implementingAgency?: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  riskNotes?: string;
   submittedBy: string;
   updated: string; // ISO date
 }
@@ -90,22 +104,46 @@ function seedProjects(count: number, statusPool: ProjectStatus[], startId: numbe
   ];
   const wefOptions: PipelineProject["wef"][] = [["Water"], ["Energy"], ["Food"], ["Water", "Food"], ["Water", "Energy"], ["Energy", "Food"], ["Water", "Energy", "Food"]];
   const names = ["M. Tariq Bashir", "Sana Iqbal", "Farrukh Zaman", "Ayesha Noor", "Bilal Aslam", "Rukhsana Kareem", "Imran Sheikh", "Zara Hameed"];
+  const districts = ["Lahore", "Multan", "Hyderabad", "Peshawar", "Quetta", "Muzaffarabad", "Gilgit", "Faisalabad", "Sukkur", "Abbottabad"];
+  const agencies = ["Provincial Irrigation Department", "Provincial Energy Department", "Local Government & Rural Development", "Provincial Disaster Management Authority", "Agriculture Extension Department"];
 
   return Array.from({ length: count }, (_, i) => {
     const id = startId + i;
     const cost = Math.round((5 + Math.random() * 120) * 1_000_000);
+    const startYear = 2025 + (i % 2);
+    const startDate = new Date(startYear, i % 12, 1 + (i % 20)).toISOString().slice(0, 10);
+    const endDate = new Date(startYear + 1 + (i % 3), i % 12, 1 + (i % 20)).toISOString().slice(0, 10);
     return {
       id,
       title: titles[i % titles.length],
+      imageUrl: [
+        "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=900&q=80",
+        "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=900&q=80",
+        "https://images.unsplash.com/photo-1448375240586-882707db888b?w=900&q=80",
+        "https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=900&q=80",
+      ][i % 4],
       province: provincesCycle[i % provincesCycle.length],
+      district: districts[i % districts.length],
       sector: sectorsCycle[i % sectorsCycle.length],
       wef: wefOptions[i % wefOptions.length],
       status: statusPool[i % statusPool.length],
       costUSD: cost,
       fundingGapUSD: Math.round(cost * (0.25 + Math.random() * 0.5)),
+        availableFundingUSD: Math.round(cost * 0.2),
+        primarySector: sectorsCycle[i % sectorsCycle.length],
+        secondarySector: sectorsCycle[(i + 1) % sectorsCycle.length],
+        sdgs: [`SDG ${6 + (i % 9)}`],
+      coFinancingUSD: Math.round(cost * (0.05 + Math.random() * 0.2)),
       beneficiaries: Math.round(5_000 + Math.random() * 250_000),
       jobs: Math.round(50 + Math.random() * 4_000),
       readiness: Math.round(35 + Math.random() * 65),
+      startDate,
+      endDate,
+      implementingAgency: agencies[i % agencies.length],
+      contactName: names[i % names.length],
+      contactEmail: `${names[i % names.length].split(" ")[0].toLowerCase()}@pcpp.gov.pk`,
+      contactPhone: `+92-3${(i % 9)}${(i % 8)}-${1000000 + i}`,
+      riskNotes: "",
       submittedBy: names[i % names.length],
       updated: new Date(2026, 7 - (i % 6), 1 + (i % 27)).toISOString().slice(0, 10),
     };

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Client Review Questions and Demo Responses</title>
+<style>
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #222; margin: 1in; }
+h1 { color: #1c2d7a; font-size: 22pt; }
+h2 { color: #1c2d7a; font-size: 15pt; margin-top: 24pt; }
+p { line-height: 1.35; }
+table { border-collapse: collapse; width: 100%; margin-top: 12pt; }
+th { background: #1c2d7a; color: white; text-align: left; padding: 8pt; }
+td { border: 1px solid #b8c1d1; vertical-align: top; padding: 8pt; }
+tr:nth-child(even) { background: #f3f6fa; }
+.question { font-weight: bold; color: #1c2d7a; }
+.small { color: #555; }
+</style>
+</head>
+<body>
+<h1>Client Review Questions and Demo Responses</h1>
+<p><b>Date:</b> 26 August 2026</p>
+<p>This document responds to the seven questions listed at the end of the client platform review. The current implementation is a browser-only demonstration using local dummy data and localStorage. The demo flow is implemented, while the production business rules marked below still require client confirmation.</p>
+
+<table>
+<tr><th style="width:25%">Client question</th><th style="width:42%">Implemented demo response</th><th style="width:33%">Production confirmation needed</th></tr>
+<tr><td><span class="question">1. What do High, Medium and Low provincial concentration mean?</span></td><td>High means 600 or more projects, Medium means 300 to 599 projects, and Low means fewer than 300 projects. The dashboard describes this as a portfolio-volume signal, not a project-quality score.</td><td>Confirm whether these thresholds and this definition should be used in production.</td></tr>
+<tr><td><span class="question">2. What information should appear on the provincial dashboard?</span></td><td>The dashboard includes total projects, approved projects, awaiting decision, funding required, available funding, funding gap, returned projects requiring action, sector mix, analytics, and reports.</td><td>Confirm the final dashboard scope and any additional provincial indicators.</td></tr>
+<tr><td><span class="question">3. How is project readiness calculated, and can it be upgraded?</span></td><td>The demo readiness score represents completeness of project scope, financials, timeline, ownership, WEF linkage, and supporting evidence. Ministry review and project updates can change the record.</td><td>Confirm the official readiness formula, weighting, approval authority, and upgrade process.</td></tr>
+<tr><td><span class="question">4. What is the difference between Submitted and Under Review?</span></td><td>Submitted means the provincial focal point has sent the project for ministry review. Under Review means the project is actively assigned to the ministry review process. Approval is required before catalogue publication.</td><td>Confirm the exact transition rule and who is responsible for changing each status.</td></tr>
+<tr><td><span class="question">5. Who can see investor interests after In discussion or Connected?</span></td><td>The demo supports Awaiting response, In discussion, Connected, and Declined. The investor and provincial project owner can see the current stage, timeline, and any proposed commitment amount. Connected represents a confirmed handoff.</td><td>Confirm role permissions, notification rules, required actions, and the full workflow for each stage.</td></tr>
+<tr><td><span class="question">6. Should provinces have downloadable, filterable reports?</span></td><td>The provincial Analytics &amp; Reports page provides a province-scoped CSV download for the selected status filter. My Projects also filters by text and status.</td><td>Confirm required report formats, fields, filters, scheduling, and whether PDF/XLSX exports are needed.</td></tr>
+<tr><td><span class="question">7. Where do investors and provinces interact, and how are committed investments recorded?</span></td><td>The demo represents the interaction through project-specific investor interests, status changes, a shared timeline, and an optional proposed commitment amount. The Connected stage represents the handoff.</td><td>Confirm whether full messaging, meeting records, verified commitment amounts, funding-source fields, and project updates after commitment are required.</td></tr>
+</table>
+
+<h2>Conclusion</h2>
+<p>All seven client questions are represented in the demo application. The remaining items are production decisions that require confirmation before the final backend rules and data model are fixed.</p>
+<p class="small"><b>Related implementation document:</b> CLIENT_REVIEW_COMPLETION.md</p>
+</body>
+</html>

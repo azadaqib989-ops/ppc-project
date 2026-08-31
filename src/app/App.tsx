@@ -8,8 +8,9 @@ import {
   Facebook, ExternalLink, BarChart3, Leaf, Eye, EyeOff, LogIn,
   UserPlus, Building2, Check, AlertCircle,
 } from "lucide-react";
-import { useAuth, DEMO_CREDENTIALS, type Role } from "./lib/auth";
-import { getUsers, saveUsers } from "./lib/store";
+import { toast } from "sonner";
+import { Toaster } from "./components/ui/sonner";
+import { useAuth, type Role } from "./lib/auth";
 import AdminDashboard from "./pages/AdminDashboard";
 import InvestorDashboard from "./pages/InvestorDashboard";
 import FocalDashboard from "./pages/FocalDashboard";
@@ -295,30 +296,24 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const fillDemo = (role: Role) => {
-    const cred = DEMO_CREDENTIALS.find(c => c.role === role)!;
-    setEmail(cred.email);
-    setPassword(cred.password);
-    setError("");
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setPhase("loading");
-    setTimeout(() => {
-      const user = login(email, password);
-      if (!user) {
-        setError("Invalid email or password. Try one of the demo accounts below.");
-        setPhase("idle");
-        return;
-      }
+    try {
+      const user = await login(email, password);
+      toast.success("Signed in successfully!");
       setPhase("success");
       setTimeout(() => {
         onClose();
         navigate(roleHome(user.role));
       }, 900);
-    }, 1000);
+    } catch (err: any) {
+      const message = err?.message || "Invalid email or password.";
+      toast.error(message);
+      setError(message);
+      setPhase("idle");
+    }
   };
 
   return (
@@ -362,15 +357,6 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
           </motion.div>
         ) : (
           <motion.form key="form" onSubmit={handleSubmit} className="space-y-4">
-            <div className="bg-[#eef0f9] border border-[#1c2d7a]/10 rounded-lg px-3.5 py-3 space-y-2">
-              <p className="text-[11px] font-bold text-[#1c2d7a] uppercase tracking-wide" style={{ fontFamily: "'Inter', sans-serif" }}>Demo access</p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {DEMO_CREDENTIALS.map(c => (
-                  <button key={c.role} type="button" onClick={() => fillDemo(c.role)} className="text-[11px] font-semibold text-[#1c2d7a] bg-white border border-[#1c2d7a]/15 rounded px-2 py-1.5 hover:bg-[#1c2d7a] hover:text-white transition-colors truncate">{c.label}</button>
-                ))}
-              </div>
-            </div>
-
             <InputField label="Email address" type="email" placeholder="" value={email} onChange={setEmail} required />
             <InputField label="Password" type="password" placeholder="" value={password} onChange={setPassword} required />
 
@@ -409,6 +395,7 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
 
 
 function SignupForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () => void }) {
+  const { setSessionUser } = useAuth();
   const [name, setName] = useState("");
   const [org, setOrg] = useState("");
   const [email, setEmail] = useState("");
@@ -417,46 +404,32 @@ function SignupForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =
   const [investorType, setInvestorType] = useState("");
   const [phase, setPhase] = useState<AuthPhase>("idle");
   const [error, setError] = useState("");
-  const { login } = useAuth();
-  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     if (investorType === "Provincial Focal Point" || investorType === "Ministry User") {
-      setError("Government accounts are provisioned by the Central Ministry Administrator. Please contact your ministry focal point for access, or sign up as an Investor / Development Partner.");
-      return;
-    }
-
-    const users = getUsers();
-    if (users.some(u => u.email.toLowerCase() === email.trim().toLowerCase())) {
-      setError("An account with this email already exists. Try signing in instead.");
+      const message = "Government accounts are provisioned by the Central Ministry Administrator. Please contact your ministry focal point for access, or sign up as an Investor / Development Partner.";
+      setError(message);
+      toast.error(message);
       return;
     }
 
     setPhase("loading");
-    setTimeout(() => {
-      saveUsers([
-        ...users,
-        {
-          id: Date.now(),
-          name,
-          email: email.trim(),
-          password,
-          role: "investor",
-          title: org ? `${investorType || "Investor"} · ${org}` : (investorType || "Investor"),
-          active: true,
-        },
-      ]);
-
-      login(email.trim(), password);
+    try {
+      setSessionUser({ id: `local-${Date.now()}`, name, email: email.trim(), role: "investor", organization: org, title: "Investment Partner" });
+      toast.success(`Account created for ${email.trim()}.`);
       setPhase("success");
       setTimeout(() => {
         onClose();
-        navigate("/dashboard/investor");
       }, 900);
-    }, 1100);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not create your account.";
+      setError(message);
+      toast.error(message);
+      setPhase("idle");
+    }
   };
 
   return (
@@ -1304,6 +1277,7 @@ function Landing() {
       {selectedProject && <ProjectDetails project={selectedProject} onClose={() => setSelectedProject(null)} onInvest={openInvestment} />}
       <AuthModal mode={authMode} onClose={closeAuth} />
       <BackToTop visible={scrollY > 600} />
+      <Toaster position="top-right" richColors />
     </div>
   );
 }

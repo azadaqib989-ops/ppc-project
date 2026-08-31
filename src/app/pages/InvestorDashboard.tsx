@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   LayoutDashboard, LayoutGrid, Bookmark, Handshake, PieChart as PieChartIcon,
-  Search, MapPin, Droplets, Sun, Leaf,
+  Search, MapPin, Droplets, Sun, Leaf, Loader2,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -12,10 +13,7 @@ import { KpiCard, Panel, StatusBadge } from "./dashboardWidgets";
 import { ProjectDetailModal } from "./ProjectDetail";
 import { useAuth } from "../lib/auth";
 import { PROVINCES, SECTOR_DATA, IMPACT_METRICS, formatUSD, formatNumber } from "../lib/mockData";
-import {
-  getProjects, getSaved, toggleSaved, getInterests, addInterest,
-  type StoreProject, type InvestorInterest,
-} from "../lib/store";
+import { getProjects, getSaved, toggleSaved, getInterests, addInterest, type StoreProject } from "../lib/store";
 
 const NAV_ITEMS: NavItem[] = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
@@ -25,24 +23,46 @@ const NAV_ITEMS: NavItem[] = [
   { key: "analytics", label: "Opportunity Analytics", icon: PieChartIcon },
 ];
 
+// Loads the live, approved project catalogue from the backend (GET /projects/catalogue).
 function useCatalogue() {
   const [projects, setProjects] = useState<StoreProject[]>([]);
-  useEffect(() => { setProjects(getProjects().filter(p => p.status === "Approved")); }, []);
-  return projects;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    setProjects(getProjects().filter(p => p.status === "Approved"));
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+  return { projects, loading, error, refresh: load };
+}
+
+// Loads province/sector reference data from the backend for filter dropdowns.
+function useReferenceData() {
+  const provinces = PROVINCES.map((p, i) => ({ id: String(i), name: p.name }));
+  const sectors = SECTOR_DATA.map((s, i) => ({ id: String(i), name: s.name, color: s.color }));
+  return { provinces, sectors };
 }
 
 function OverviewTab({ catalogue }: { catalogue: StoreProject[] }) {
   const { user } = useAuth();
-  const saved = user ? getSaved(user.email) : [];
-  const interests = getInterests().filter(i => i.investorEmail === user?.email);
+  const [savedCount, setSavedCount] = useState(0);
+  const [interestCount, setInterestCount] = useState(0);
+  useEffect(() => {
+    setSavedCount(getSaved(user?.email ?? "investor@pcpp.gov.pk").length);
+    setInterestCount(getInterests().filter(i => i.investorEmail === (user?.email ?? "investor@pcpp.gov.pk")).length);
+  }, [user?.email]);
   const fundingGap = catalogue.reduce((s, p) => s + p.fundingGapUSD, 0);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard icon={LayoutGrid} label="Approved Opportunities" value={formatNumber(catalogue.length)} sub="Published & investable" />
-        <KpiCard icon={Bookmark} label="Saved Projects" value={String(saved.length)} accent="#17a4c2" />
-        <KpiCard icon={Handshake} label="Active Interests" value={String(interests.length)} accent="#e8a020" />
+        <KpiCard icon={Bookmark} label="Saved Projects" value={String(savedCount)} accent="#17a4c2" />
+        <KpiCard icon={Handshake} label="Active Interests" value={String(interestCount)} accent="#e8a020" />
         <KpiCard icon={Droplets} label="Funding Gap in View" value={formatUSD(fundingGap)} sub="Across visible catalogue" accent="#2f9e6d" />
       </div>
 
@@ -95,6 +115,9 @@ const wefIcon = { Water: Droplets, Energy: Sun, Food: Leaf } as const;
 function ProjectCard({ p, saved, onToggleSave, onView }: { p: StoreProject; saved: boolean; onToggleSave: () => void; onView: () => void }) {
   return (
     <div className="bg-white border border-border rounded-xl p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">
+      <button onClick={onView} className="h-32 w-full overflow-hidden rounded-lg bg-slate-100" aria-label={`View ${p.title}`}>
+        <img src={p.imageUrl} alt={p.title} className="h-full w-full object-cover transition-transform hover:scale-105" />
+      </button>
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap gap-1">
           {p.wef.map(w => {
@@ -119,29 +142,34 @@ function ProjectCard({ p, saved, onToggleSave, onView }: { p: StoreProject; save
   );
 }
 
-function ExpressInterestForm({ project, onCancel, onSend }: { project: StoreProject; onCancel: () => void; onSend: (msg: string) => void }) {
+function ExpressInterestForm({ project, onCancel, onSend, sending }: { project: StoreProject; onCancel: () => void; onSend: (msg: string) => void; sending: boolean }) {
   const [message, setMessage] = useState(`We are interested in learning more about "${project.title}" — please share the current procurement timeline and co-financing options.`);
+  const [commitment, setCommitment] = useState("");
   return (
     <div className="w-full space-y-2">
       <textarea value={message} onChange={e => setMessage(e.target.value)} rows={3}
         className="w-full text-[12.5px] border border-border rounded-lg p-2.5 bg-[#f4f7fb] focus:outline-none focus:ring-2 focus:ring-[#1c2d7a]/15" />
+      <input value={commitment} onChange={e => setCommitment(e.target.value)} type="number" min="0" placeholder="Proposed commitment (USD, optional)" className="w-full text-[12.5px] border border-border rounded-lg p-2.5 bg-[#f4f7fb]" />
       <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 text-[12.5px] font-semibold py-2 rounded border border-border hover:bg-slate-50">Cancel</button>
-        <button onClick={() => onSend(message)} className="flex-1 bg-[#17a4c2] text-white font-bold text-sm py-2 rounded hover:bg-[#1c2d7a]">Send interest</button>
+        <button onClick={onCancel} disabled={sending} className="flex-1 text-[12.5px] font-semibold py-2 rounded border border-border hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+        <button onClick={() => onSend(message, Number(commitment) || undefined)} disabled={sending} className="flex-1 bg-[#17a4c2] text-white font-bold text-sm py-2 rounded hover:bg-[#1c2d7a] disabled:opacity-60 inline-flex items-center justify-center gap-1.5">
+          {sending && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Send interest
+        </button>
       </div>
     </div>
   );
 }
 
-function CatalogueTab({ catalogue }: { catalogue: StoreProject[] }) {
+function CatalogueTab({ catalogue, provinces, sectors }: { catalogue: StoreProject[]; provinces: ApiProvince[]; sectors: ApiSector[] }) {
   const { user } = useAuth();
   const [query, setQuery] = useState("");
   const [province, setProvince] = useState("All");
   const [sector, setSector] = useState("All");
-  const [saved, setSaved] = useState<number[]>(user ? getSaved(user.email) : []);
+  const [saved, setSaved] = useState<number[]>([]);
   const [viewing, setViewing] = useState<StoreProject | null>(null);
   const [expressing, setExpressing] = useState(false);
   const [sentMsg, setSentMsg] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const filtered = useMemo(() => catalogue.filter(p =>
     (province === "All" || p.province === province) &&
@@ -149,32 +177,37 @@ function CatalogueTab({ catalogue }: { catalogue: StoreProject[] }) {
     p.title.toLowerCase().includes(query.toLowerCase())
   ), [catalogue, query, province, sector]);
 
-  const toggleSave = (id: number) => {
+  useEffect(() => {
+    setSaved(getSaved(user?.email ?? "investor@pcpp.gov.pk"));
+  }, [user?.email]);
+
+  const toggleSave = async (id: number) => {
     if (!user) return;
     setSaved(toggleSaved(user.email, id));
   };
 
-  const sendInterest = (message: string) => {
-    if (!user || !viewing) return;
-    const interest: InvestorInterest = {
-      id: Date.now(),
-      projectId: viewing.id,
-      investorEmail: user.email,
-      investorName: user.name,
-      message,
-      status: "Awaiting response",
-      createdAt: new Date().toISOString().slice(0, 10),
-      timeline: [{ note: "Interest submitted to project owner.", date: new Date().toISOString().slice(0, 10), by: user.name }],
-    };
-    addInterest(interest);
-    setExpressing(false);
-    setSentMsg(true);
-    setTimeout(() => { setSentMsg(false); setViewing(null); }, 1400);
+  const sendInterest = async (message: string, commitmentUSD?: number) => {
+    if (!user || !viewing) {
+      toast.error("Please sign in before expressing interest.");
+      return;
+    }
+    setSending(true);
+    try {
+      addInterest({ id: Date.now(), projectId: viewing.id, investorEmail: user.email, investorName: user.name, message, commitmentUSD, status: "Awaiting response", createdAt: new Date().toISOString().slice(0, 10), timeline: [{ note: "Interest submitted to project owner.", date: new Date().toISOString().slice(0, 10), by: user.name }] });
+      toast.success("Interest sent to the project owner.");
+      setExpressing(false);
+      setSentMsg(true);
+      setTimeout(() => { setSentMsg(false); setViewing(null); }, 1400);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send interest.");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
     <div className="space-y-4">
-      <Panel title="Filter the catalogue" description="Narrow ~2,600 national projects to what matters for your mandate">
+      <Panel title="Filter the catalogue" description="Narrow national projects to what matters for your mandate">
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
@@ -183,11 +216,11 @@ function CatalogueTab({ catalogue }: { catalogue: StoreProject[] }) {
           </div>
           <select value={province} onChange={e => setProvince(e.target.value)} className="px-3 py-2 text-[12.5px] border border-border rounded-lg bg-[#f4f7fb]">
             <option>All</option>
-            {PROVINCES.map(p => <option key={p.name}>{p.name}</option>)}
+            {(provinces.length ? provinces.map(p => p.name) : PROVINCES.map(p => p.name)).map(name => <option key={name}>{name}</option>)}
           </select>
           <select value={sector} onChange={e => setSector(e.target.value)} className="px-3 py-2 text-[12.5px] border border-border rounded-lg bg-[#f4f7fb]">
             <option>All</option>
-            {SECTOR_DATA.map(s => <option key={s.name}>{s.name}</option>)}
+            {(sectors.length ? sectors.map(s => s.name) : SECTOR_DATA.map(s => s.name)).map(name => <option key={name}>{name}</option>)}
           </select>
         </div>
       </Panel>
@@ -206,7 +239,7 @@ function CatalogueTab({ catalogue }: { catalogue: StoreProject[] }) {
             sentMsg ? (
               <p className="w-full text-center text-[13px] font-semibold text-[#2f9e6d]">Interest sent — track it under "My Interests".</p>
             ) : expressing ? (
-              <ExpressInterestForm project={viewing} onCancel={() => setExpressing(false)} onSend={sendInterest} />
+              <ExpressInterestForm project={viewing} onCancel={() => setExpressing(false)} onSend={sendInterest} sending={sending} />
             ) : (
               <button onClick={() => setExpressing(true)} className="w-full bg-[#17a4c2] text-white font-bold text-sm py-2.5 rounded hover:bg-[#1c2d7a]">Express interest</button>
             )
@@ -219,8 +252,10 @@ function CatalogueTab({ catalogue }: { catalogue: StoreProject[] }) {
 
 function SavedTab({ catalogue }: { catalogue: StoreProject[] }) {
   const { user } = useAuth();
-  const [saved, setSaved] = useState<number[]>(user ? getSaved(user.email) : []);
-  const projects = catalogue.filter(p => saved.includes(p.id));
+  const [savedIds, setSavedIds] = useState<number[]>([]);
+  const [viewing, setViewing] = useState<StoreProject | null>(null);
+  useEffect(() => { setSavedIds(getSaved(user?.email ?? "investor@pcpp.gov.pk")); }, [user?.email]);
+  const projects = catalogue.filter(p => savedIds.includes(p.id));
 
   return (
     <Panel title="Saved projects" description="Opportunities you have bookmarked for closer review">
@@ -229,24 +264,31 @@ function SavedTab({ catalogue }: { catalogue: StoreProject[] }) {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map(p => (
-            <ProjectCard key={p.id} p={p} saved onToggleSave={() => user && setSaved(toggleSaved(user.email, p.id))} onView={() => {}} />
+            <ProjectCard key={p.id} p={p} saved onToggleSave={() => { if (user) setSavedIds(toggleSaved(user.email, p.id)); }} onView={() => setViewing(p)} />
           ))}
         </div>
       )}
+      {viewing && <ProjectDetailModal project={viewing} onClose={() => setViewing(null)} />}
     </Panel>
   );
 }
 
 function InterestsTab({ catalogue }: { catalogue: StoreProject[] }) {
-  const { user } = useAuth();
-  const [interests, setInterests] = useState<InvestorInterest[]>([]);
-  useEffect(() => { setInterests(getInterests().filter(i => i.investorEmail === user?.email)); }, [user]);
+  const [interests, setInterests] = useState<ReturnType<typeof getInterests>>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    setInterests(getInterests());
+    setLoading(false);
+  }, []);
 
-  const rows = interests.map(i => ({ ...i, project: catalogue.find(p => p.id === i.projectId) }));
+  const rows = interests.map(i => ({ ...i, project: catalogue.find(p => p.id === i.projectId), projectTitle: catalogue.find(p => p.id === i.projectId)?.title ?? "Project" }));
 
   return (
     <Panel title="My investor interests" description="Track the conversations you've started with project owners">
-      {rows.length === 0 ? (
+      {loading ? (
+        <p className="text-[12.5px] text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading your interests…</p>
+      ) : rows.length === 0 ? (
         <p className="text-[12.5px] text-muted-foreground">You haven't expressed interest in a project yet.</p>
       ) : (
         <div className="overflow-x-auto">
@@ -261,17 +303,18 @@ function InterestsTab({ catalogue }: { catalogue: StoreProject[] }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => r.project && (
+              {rows.map(r => (
                 <tr key={r.id} className="border-b border-border hover:bg-[#f9fafc]">
-                  <td className="py-2.5 px-3 font-medium text-[#0f172a]">{r.project.title}</td>
-                  <td className="py-2.5 px-3 text-muted-foreground">{r.project.province}</td>
-                  <td className="py-2.5 px-3 font-semibold">{formatUSD(r.project.fundingGapUSD)}</td>
+                  <td className="py-2.5 px-3 font-medium text-[#0f172a]">{r.projectTitle}<div className="text-[10.5px] text-muted-foreground">{r.commitmentUSD ? `Proposed: ${formatUSD(r.commitmentUSD)}` : "No amount proposed"}</div></td>
+                  <td className="py-2.5 px-3 text-muted-foreground">{r.project?.province ?? "—"}</td>
+                  <td className="py-2.5 px-3 font-semibold">{r.project ? formatUSD(r.project.fundingGapUSD) : "—"}</td>
                   <td className="py-2.5 px-3"><StatusBadge status={r.status} /></td>
-                  <td className="py-2.5 px-3 text-muted-foreground">{r.createdAt}</td>
+                  <td className="py-2.5 px-3 text-muted-foreground">{r.createdAt.slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {rows.map(r => <div key={`timeline-${r.id}`} className="mt-3 border border-border rounded-lg p-3"><div className="text-[11px] font-bold uppercase tracking-wide text-[#1c2d7a]">{r.projectTitle} interaction timeline</div>{r.timeline.map((event, i) => <div key={i} className="text-[11.5px] text-muted-foreground mt-1">{event.date} · {event.by}: {event.note}</div>)}</div>)}
         </div>
       )}
     </Panel>
@@ -279,12 +322,15 @@ function InterestsTab({ catalogue }: { catalogue: StoreProject[] }) {
 }
 
 function AnalyticsTab({ catalogue }: { catalogue: StoreProject[] }) {
+  const [selected, setSelected] = useState<StoreProject[]>([]);
+  const [viewing, setViewing] = useState<StoreProject | null>(null);
   const readinessBuckets = [
-    { name: "0-40%", count: catalogue.filter(p => p.readiness < 40).length },
-    { name: "40-60%", count: catalogue.filter(p => p.readiness >= 40 && p.readiness < 60).length },
-    { name: "60-80%", count: catalogue.filter(p => p.readiness >= 60 && p.readiness < 80).length },
-    { name: "80-100%", count: catalogue.filter(p => p.readiness >= 80).length },
+    { name: "0-40%", count: catalogue.filter(p => p.readiness < 40).length, projects: catalogue.filter(p => p.readiness < 40) },
+    { name: "40-60%", count: catalogue.filter(p => p.readiness >= 40 && p.readiness < 60).length, projects: catalogue.filter(p => p.readiness >= 40 && p.readiness < 60) },
+    { name: "60-80%", count: catalogue.filter(p => p.readiness >= 60 && p.readiness < 80).length, projects: catalogue.filter(p => p.readiness >= 60 && p.readiness < 80) },
+    { name: "80-100%", count: catalogue.filter(p => p.readiness >= 80).length, projects: catalogue.filter(p => p.readiness >= 80) },
   ];
+  const sectorMix = SECTOR_DATA.map(s => ({ ...s, count: catalogue.filter(p => p.sector === s.name).length, projects: catalogue.filter(p => p.sector === s.name) })).filter(s => s.count > 0);
   return (
     <div className="grid lg:grid-cols-2 gap-5">
       <Panel title="Readiness distribution" description="How investable the current catalogue is, at a glance">
@@ -294,28 +340,37 @@ function AnalyticsTab({ catalogue }: { catalogue: StoreProject[] }) {
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-            <Bar dataKey="count" fill="#1c2d7a" radius={[4, 4, 0, 0]} name="Projects" />
+            <Bar dataKey="count" fill="#1c2d7a" radius={[4, 4, 0, 0]} name="Projects" onClick={data => setSelected(data.projects)} />
           </BarChart>
         </ResponsiveContainer>
       </Panel>
       <Panel title="Sector opportunity mix" description="Approved projects by sector">
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
-            <Pie data={SECTOR_DATA} dataKey="count" nameKey="name" outerRadius={95} label={({ name, percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}>
-              {SECTOR_DATA.map(s => <Cell key={s.name} fill={s.color} />)}
+            <Pie data={sectorMix} dataKey="count" nameKey="name" outerRadius={95} label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`} onClick={data => setSelected(data.projects)}>
+              {sectorMix.map(s => <Cell key={s.name} fill={s.color} />)}
             </Pie>
             <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
             <Legend wrapperStyle={{ fontSize: 10.5 }} />
           </PieChart>
         </ResponsiveContainer>
       </Panel>
+      {selected.length > 0 && <Panel title="Projects in selected category" description="Select a project to open its full detail record" className="lg:col-span-2">
+        <div className="grid sm:grid-cols-2 gap-2">
+          {selected.map(p => <button key={p.id} className="text-left border border-border rounded-lg p-3 hover:border-[#17a4c2]" onClick={() => setViewing(p)}>
+            <div className="font-semibold text-[12.5px] text-[#1c2d7a]">{p.title}</div><div className="text-[11px] text-muted-foreground">{p.province} · {p.readiness}% readiness</div>
+          </button>)}
+        </div>
+      </Panel>}
+      {viewing && <ProjectDetailModal project={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
 
 export default function InvestorDashboard() {
   const [active, setActive] = useState("overview");
-  const catalogue = useCatalogue();
+  const { projects: catalogue, loading, refresh } = useCatalogue();
+  const { provinces, sectors } = useReferenceData();
 
   return (
     <DashboardShell
@@ -325,11 +380,17 @@ export default function InvestorDashboard() {
       title="Investor Workspace"
       subtitle="Pakistan Climate Project Pipeline · Approved catalogue"
     >
-      {active === "overview" && <OverviewTab catalogue={catalogue} />}
-      {active === "catalogue" && <CatalogueTab catalogue={catalogue} />}
-      {active === "saved" && <SavedTab catalogue={catalogue} />}
-      {active === "interests" && <InterestsTab catalogue={catalogue} />}
-      {active === "analytics" && <AnalyticsTab catalogue={catalogue} />}
+      {loading ? (
+        <p className="text-[12.5px] text-muted-foreground flex items-center gap-2 py-10 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Loading catalogue from server…</p>
+      ) : (
+        <>
+          {active === "overview" && <OverviewTab catalogue={catalogue} />}
+          {active === "catalogue" && <CatalogueTab catalogue={catalogue} provinces={provinces} sectors={sectors} />}
+          {active === "saved" && <SavedTab catalogue={catalogue} />}
+          {active === "interests" && <InterestsTab catalogue={catalogue} />}
+          {active === "analytics" && <AnalyticsTab catalogue={catalogue} />}
+        </>
+      )}
     </DashboardShell>
   );
 }

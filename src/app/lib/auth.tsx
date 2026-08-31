@@ -1,61 +1,78 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { getUsers } from "./store";
-
 export type Role = "admin" | "reviewer" | "focal" | "investor";
+export const API_BASE_URL = "/api/v1";
 
 export interface AuthUser {
+  id: string;
   email: string;
   role: Role;
   name: string;
-  title: string;
+  organization?: string;
+  provinceId?: string;
+  // Legacy fields kept for compatibility with dashboards still reading mock/local data.
+  title?: string;
   province?: string;
 }
 
-// Dummy credentials for client demo purposes only — not connected to a real backend.
-// Kept in sync with the seed users in lib/store.ts (getUsers()).
-export const DEMO_CREDENTIALS: { email: string; password: string; role: Role; label: string }[] = [
-  { email: "admin@pcpp.gov.pk", password: "Admin@123", role: "admin", label: "Ministry Admin" },
-  { email: "reviewer@pcpp.gov.pk", password: "Reviewer@123", role: "reviewer", label: "Reviewer / Analyst" },
-  { email: "focal@pcpp.gov.pk", password: "Focal@123", role: "focal", label: "Provincial Focal Point (Punjab)" },
-  { email: "investor@pcpp.gov.pk", password: "Investor@123", role: "investor", label: "Investor" },
+const DEMO_USERS: Array<AuthUser & { password: string }> = [
+  { id: "1", email: "admin@pcpp.gov.pk", password: "Admin@123", role: "admin", name: "Ayesha Raza", title: "Central Ministry Administrator" },
+  { id: "2", email: "reviewer@pcpp.gov.pk", password: "Reviewer@123", role: "reviewer", name: "Farrukh Zaman", title: "Reviewer / Analyst" },
+  { id: "3", email: "focal@pcpp.gov.pk", password: "Focal@123", role: "focal", name: "M. Tariq Bashir", province: "Punjab", provinceId: "punjab", title: "Provincial Focal Point — Punjab" },
+  { id: "4", email: "focal.sindh@pcpp.gov.pk", password: "Focal@123", role: "focal", name: "Sana Iqbal", province: "Sindh", provinceId: "sindh", title: "Provincial Focal Point — Sindh" },
+  { id: "5", email: "investor@pcpp.gov.pk", password: "Investor@123", role: "investor", name: "James Whitfield", organization: "Global Climate Fund", title: "Investment Partner" },
 ];
 
 interface AuthContextValue {
   user: AuthUser | null;
-  login: (email: string, password: string) => AuthUser | null;
+  accessToken: string | null;
+  login: (email: string, password: string) => Promise<AuthUser>;
   logout: () => void;
+  // Sets a session user directly without calling the API — used by the demo signup flow, which is not backed by a real endpoint.
+  setSessionUser: (user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = "pcpp_auth_user";
+const TOKEN_KEY = "pcpp_access_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
     if (raw) {
       try { setUser(JSON.parse(raw)); } catch { /* ignore corrupt storage */ }
     }
+    if (token) setAccessToken(token);
+
+    if (raw) setUser(JSON.parse(raw));
   }, []);
 
-  const login = (email: string, password: string) => {
-    const match = getUsers().find(
-      u => u.active && u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
-    );
-    if (!match) return null;
-    const authUser: AuthUser = { email: match.email, role: match.role, name: match.name, title: match.title, province: match.province };
+  const login = async (email: string, password: string) => {
+    const authUser = DEMO_USERS.find(u => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password);
+    if (!authUser) throw new Error("Invalid demo email or password.");
+
     setUser(authUser);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+    localStorage.removeItem(TOKEN_KEY);
     return authUser;
   };
 
   const logout = () => {
     setUser(null);
+    setAccessToken(null);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKEN_KEY);
   };
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
+  const setSessionUser = (authUser: AuthUser) => {
+    setUser(authUser);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+  };
+
+  return <AuthContext.Provider value={{ user, accessToken, login, logout, setSessionUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
