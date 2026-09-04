@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { Menu, X, LogOut, Bell, RotateCcw } from "lucide-react";
 import { useAuth } from "../lib/auth";
-import { getNotifications, markNotificationsRead, resetDemoData, type AppNotification } from "../lib/store";
+import { resetDemoData } from "../lib/store";
+import { getNotifications as getApiNotifications, markAllNotificationsRead } from "../lib/api";
+import type { ApiNotification } from "../lib/api";
 
 export interface NavItem {
   key: string;
@@ -24,22 +26,22 @@ export function DashboardShell({
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
-  const [notifs, setNotifs] = useState<AppNotification[]>([]);
+  const [notifs, setNotifs] = useState<ApiNotification[]>([]);
 
   useEffect(() => {
     if (!user) return;
-    const audience = user.role === "focal" ? "focal" : user.role;
-    setNotifs(getNotifications().filter(n => n.audience === audience || n.audience === "public"));
+    getApiNotifications({ page: 1, pageSize: 50 })
+      .then(page => setNotifs(page.data))
+      .catch(() => setNotifs([]));
   }, [user]);
 
-  const unread = notifs.filter(n => !n.read).length;
+  const unread = notifs.filter(n => !n.isRead).length;
 
   const handleOpenNotifs = () => {
     setShowNotifs(s => !s);
     if (!showNotifs && user) {
-      const audience = user.role === "focal" ? "focal" : user.role;
-      markNotificationsRead(audience);
-      setNotifs(ns => ns.map(n => ({ ...n, read: true })));
+      void markAllNotificationsRead();
+      setNotifs(ns => ns.map(n => ({ ...n, isRead: true })));
     }
   };
 
@@ -56,7 +58,7 @@ export function DashboardShell({
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="dashboard-app min-h-screen bg-[#f4f7fb] flex" style={{ fontFamily: "Arial, sans-serif" }}>
       {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-[#0c1840] text-white flex flex-col transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="flex items-center gap-2.5 px-6 h-[70px] border-b border-white/10">
@@ -70,7 +72,7 @@ export function DashboardShell({
             ))}
           </div>
           <div>
-            <div className="font-bold text-[13px] leading-none" style={{ fontFamily: "'Playfair Display', serif" }}>PCPP</div>
+            <div className="font-bold text-[13px] leading-none">PCPP</div>
             <div className="text-[9px] text-white/45 tracking-[0.16em] uppercase mt-0.5">Platform</div>
           </div>
           <button className="ml-auto lg:hidden text-white/60" onClick={() => setMobileOpen(false)}><X className="w-4 h-4" /></button>
@@ -118,7 +120,7 @@ export function DashboardShell({
         <header className="h-[70px] bg-white border-b border-border flex items-center gap-4 px-5 lg:px-8 sticky top-0 z-20">
           <button className="lg:hidden text-[#0f172a]" onClick={() => setMobileOpen(true)}><Menu className="w-5 h-5" /></button>
           <div className="min-w-0">
-            <h1 className="text-[16px] lg:text-lg font-bold text-[#1c2d7a] truncate" style={{ fontFamily: "'Playfair Display', serif" }}>{title}</h1>
+            <h1 className="text-[16px] lg:text-lg font-bold text-[#1c2d7a] truncate">{title}</h1>
             <p className="text-[11.5px] text-muted-foreground truncate">{subtitle}</p>
           </div>
           <div className="ml-auto flex items-center gap-3 relative">
@@ -134,7 +136,7 @@ export function DashboardShell({
                   {notifs.map(n => (
                     <div key={n.id} className="px-2 py-2 rounded-lg hover:bg-slate-50">
                       <p className="text-[12.5px] text-[#0f172a] leading-snug">{n.text}</p>
-                      <p className="text-[10.5px] text-muted-foreground mt-0.5">{n.date}</p>
+                      <p className="text-[10.5px] text-muted-foreground mt-0.5">{n.createdAt.slice(0, 10)}</p>
                     </div>
                   ))}
                 </div>

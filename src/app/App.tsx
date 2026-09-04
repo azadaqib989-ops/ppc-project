@@ -11,6 +11,8 @@ import {
 import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
 import { useAuth, type Role } from "./lib/auth";
+import { fetchFileDataUrl, getCatalogue, mapApiProjectToStore, signupInvestor } from "./lib/api";
+import type { StoreProject } from "./lib/store";
 import AdminDashboard from "./pages/AdminDashboard";
 import InvestorDashboard from "./pages/InvestorDashboard";
 import FocalDashboard from "./pages/FocalDashboard";
@@ -136,7 +138,22 @@ const HERO_SLIDES = [
   },
 ];
 
-const PROJECTS = [
+type HomeProject = {
+  id: number | string;
+  title: string;
+  sector: string;
+  location: string;
+  investment: string;
+  status: string;
+  summary: string;
+  img: string;
+  coverImageUrl?: string;
+  icon: React.ElementType;
+  tag: string;
+  updated?: string;
+};
+
+const PROJECTS: HomeProject[] = [
   { id: 1, title: "Climate-resilient irrigation modernization", sector: "Water Management", location: "Punjab", investment: "Funding gap available", status: "Published", summary: "A public-sector pipeline opportunity focused on efficient irrigation, resilient agriculture and stronger water security for farming communities.", img: "photo-1625246333195-78d9c38ad449", icon: Droplets, tag: "Water - Food" },
   { id: 2, title: "Solar energy for resilient public services", sector: "Clean Energy", location: "Sindh", investment: "Funding gap available", status: "Published", summary: "Clean energy infrastructure designed to improve reliable access, reduce operating pressure and support climate-resilient public services.", img: "photo-1509391366360-2e959784a276", icon: Sun, tag: "Energy" },
   { id: 3, title: "Community watershed restoration", sector: "Ecosystems", location: "Khyber Pakhtunkhwa", investment: "Seeking partners", status: "Published", summary: "Landscape restoration that protects watersheds, supports rural livelihoods and connects ecological outcomes with local development priorities.", img: "photo-1448375240586-882707db888b", icon: TreePine, tag: "Water - Food" },
@@ -395,13 +412,13 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
 
 
 function SignupForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () => void }) {
-  const { setSessionUser } = useAuth();
+  const { login } = useAuth();
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [org, setOrg] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [country, setCountry] = useState("");
-  const [investorType, setInvestorType] = useState("");
   const [phase, setPhase] = useState<AuthPhase>("idle");
   const [error, setError] = useState("");
 
@@ -409,20 +426,16 @@ function SignupForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =
     e.preventDefault();
     setError("");
 
-    if (investorType === "Provincial Focal Point" || investorType === "Ministry User") {
-      const message = "Government accounts are provisioned by the Central Ministry Administrator. Please contact your ministry focal point for access, or sign up as an Investor / Development Partner.";
-      setError(message);
-      toast.error(message);
-      return;
-    }
-
     setPhase("loading");
     try {
-      setSessionUser({ id: `local-${Date.now()}`, name, email: email.trim(), role: "investor", organization: org, title: "Investment Partner" });
+      await signupInvestor({ name, email: email.trim(), password, organization: org, country });
+      // Signup doesn't return a token, so log in immediately after to start a real session.
+      const user = await login(email.trim(), password);
       toast.success(`Account created for ${email.trim()}.`);
       setPhase("success");
       setTimeout(() => {
         onClose();
+        navigate(roleHome(user.role));
       }, 900);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not create your account.";
@@ -479,20 +492,12 @@ function SignupForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =
             </div>
             <InputField label="Email address" type="email" placeholder="" value={email} onChange={setEmail} required />
             <InputField label="Password" type="password" placeholder="" value={password} onChange={setPassword} required />
-            <div className="grid grid-cols-2 gap-3">
-              <SelectField
-                label="Country"
-                value={country}
-                onChange={setCountry}
-                options={["Pakistan", "United States", "United Kingdom", "UAE", "Saudi Arabia", "Germany", "Japan", "China", "Other"]}
-              />
-              <SelectField
-                label="Platform Role"
-                value={investorType}
-                onChange={setInvestorType}
-                options={["Investor", "Development Partner", "Project Owner", "Provincial Focal Point", "Ministry User"]}
-              />
-            </div>
+            <SelectField
+              label="Country"
+              value={country}
+              onChange={setCountry}
+              options={["Pakistan", "United States", "United Kingdom", "UAE", "Saudi Arabia", "Germany", "Japan", "China", "Other"]}
+            />
 
             {/* Mini checklist */}
             <div className="bg-[#eef0f9] rounded-lg px-4 py-3 space-y-1.5">
@@ -729,7 +734,7 @@ function Navbar({ scrollY, onAuth }: { scrollY: number; onAuth: (m: AuthMode) =>
 
 // ─── Hero Slider ──────────────────────────────────────────────────────────────
 
-function Hero({ onAuth }: { onAuth: (m: AuthMode) => void }) {
+function Hero({ onAuth, recentProject }: { onAuth: (m: AuthMode) => void; recentProject?: HomeProject }) {
   const [slide, setSlide] = useState(0);
   const [direction, setDirection] = useState(1);
   const total = HERO_SLIDES.length;
@@ -754,6 +759,8 @@ function Hero({ onAuth }: { onAuth: (m: AuthMode) => void }) {
   const next = () => { const n = (slide + 1) % total; goTo(n, 1); };
 
   const s = HERO_SLIDES[slide];
+  const isProjectSlide = slide === 0 && recentProject;
+  const heroImage = isProjectSlide ? recentProject.coverImageUrl : undefined;
 
   return (
     <section
@@ -777,8 +784,8 @@ function Hero({ onAuth }: { onAuth: (m: AuthMode) => void }) {
           className="absolute inset-0"
         >
           <img
-            src={`https://images.unsplash.com/${s.img}?w=1800&h=900&fit=crop&auto=format`}
-            alt={s.label}
+            src={heroImage || `https://images.unsplash.com/${s.img}?w=1800&h=900&fit=crop&auto=format`}
+            alt={isProjectSlide ? recentProject.title : s.label}
             className="absolute inset-0 w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0f172a]/88 via-[#101b2e]/75 to-[#0a1e25]/45" />
@@ -799,16 +806,16 @@ function Hero({ onAuth }: { onAuth: (m: AuthMode) => void }) {
             <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded px-3 py-1 mb-5 w-fit backdrop-blur-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-[#dfeaf8] animate-pulse" />
               <span className="text-white/80 text-[10px] font-bold tracking-widest uppercase" style={{ fontFamily: "'Inter', sans-serif" }}>
-                {s.label} · PCPP
+                {isProjectSlide ? `Top recent project · ${recentProject.location}` : `${s.label} · PCPP`}
               </span>
             </div>
 
             <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>
-              {s.heading}
+              {isProjectSlide ? recentProject.title : s.heading}
             </h1>
 
             <p className="text-white/75 text-[15px] leading-relaxed mb-8 max-w-sm" style={{ fontFamily: "'Inter', sans-serif" }}>
-              {s.sub}
+              {isProjectSlide ? recentProject.summary : s.sub}
             </p>
 
             <div className="flex flex-wrap gap-3">
@@ -880,12 +887,13 @@ function Hero({ onAuth }: { onAuth: (m: AuthMode) => void }) {
 
 // ─── Stats Bar ────────────────────────────────────────────────────────────────
 
-function StatsBar() {
+function StatsBar({ projects }: { projects: HomeProject[] }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: false, amount: 0.4 });
-  const p1 = useCountUp(2600, 1800, inView);
-  const p2 = useCountUp(6, 1800, inView);
-  const p3 = useCountUp(3, 1800, inView);
+  const provinces = new Set(projects.map(project => project.location)).size;
+  const p1 = useCountUp(projects.length, 1800, inView);
+  const p2 = useCountUp(provinces, 1800, inView);
+  const p3 = useCountUp(new Set(projects.flatMap(project => project.tag.split(" - "))).size, 1800, inView);
   const p4 = useCountUp(1, 1800, inView);
 
   return (
@@ -909,7 +917,7 @@ function StatsBar() {
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
-function ProjectDetails({ project, onClose, onInvest }: { project: typeof PROJECTS[0]; onClose: () => void; onInvest: () => void }) {
+function ProjectDetails({ project, onClose, onInvest }: { project: HomeProject; onClose: () => void; onInvest: () => void }) {
   const Icon = project.icon;
 
   return (
@@ -931,7 +939,7 @@ function ProjectDetails({ project, onClose, onInvest }: { project: typeof PROJEC
           aria-labelledby="project-detail-title"
           onClick={event => event.stopPropagation()}
         >
-          <img src={`https://images.unsplash.com/${project.img}?w=1200&h=420&fit=crop&auto=format`} alt={project.title} className="w-full h-48 sm:h-56 object-cover" />
+          <img src={project.coverImageUrl || `https://images.unsplash.com/${project.img}?w=1200&h=420&fit=crop&auto=format`} alt={project.title} className="w-full h-48 sm:h-56 object-cover" />
           <button onClick={onClose} aria-label="Close project details" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/90 text-[#0f172a] flex items-center justify-center shadow hover:bg-white transition-colors">
             <X className="w-4 h-4" />
           </button>
@@ -963,7 +971,7 @@ function ProjectDetails({ project, onClose, onInvest }: { project: typeof PROJEC
   );
 }
 
-function ProjectCard({ p, i, onView }: { p: typeof PROJECTS[0]; i: number; onView: (project: typeof PROJECTS[0]) => void }) {
+function ProjectCard({ p, i, onView }: { p: HomeProject; i: number; onView: (project: HomeProject) => void }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: false, margin: "-50px", amount: 0.25 });
   const Icon = p.icon;
@@ -971,7 +979,7 @@ function ProjectCard({ p, i, onView }: { p: typeof PROJECTS[0]; i: number; onVie
     <motion.article ref={ref} initial={{ opacity: 0, y: 28 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.55, delay: (i % 3) * 0.1 }}
       className="group bg-white border border-border rounded-lg overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col">
       <div className="relative h-44 overflow-hidden bg-muted">
-        <img src={`https://images.unsplash.com/${p.img}?w=600&h=280&fit=crop&auto=format`} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        <img src={p.coverImageUrl || `https://images.unsplash.com/${p.img}?w=600&h=280&fit=crop&auto=format`} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
         <span className="absolute top-3 left-3 bg-[#1c2d7a] text-white text-[10px] font-bold px-2.5 py-1 rounded tracking-wide uppercase" style={{ fontFamily: "'Inter', sans-serif" }}>{p.tag}</span>
         <span className="absolute bottom-3 right-3 bg-white text-[#1c2d7a] text-xs font-bold px-2.5 py-1 rounded" style={{ fontFamily: "'Inter', sans-serif" }}>{p.investment}</span>
@@ -998,7 +1006,7 @@ function ProjectCard({ p, i, onView }: { p: typeof PROJECTS[0]; i: number; onVie
   );
 }
 
-function ProjectsSection({ onView }: { onView: (project: typeof PROJECTS[0]) => void }) {
+function ProjectsSection({ projects, onView }: { projects: HomeProject[]; onView: (project: HomeProject) => void }) {
   return (
     <section id="projects" className="py-20 lg:py-28 bg-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-10">
@@ -1008,11 +1016,11 @@ function ProjectsSection({ onView }: { onView: (project: typeof PROJECTS[0]) => 
             <motion.h2 initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: 0.1 }} className="text-3xl lg:text-4xl font-bold text-[#1c2d7a]" style={{ fontFamily: "'Playfair Display', serif" }}>Featured Climate Projects</motion.h2>
           </div>
           <a href="#" className="hidden md:inline-flex items-center gap-1.5 text-sm font-semibold text-[#17a4c2] hover:underline" style={{ fontFamily: "'Inter', sans-serif" }}>
-            View all 2,600+ projects <ArrowRight className="w-3.5 h-3.5" />
+            View all {projects.length.toLocaleString()} projects <ArrowRight className="w-3.5 h-3.5" />
           </a>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {PROJECTS.map((p, i) => <ProjectCard key={p.id} p={p} i={i} onView={onView} />)}
+          {projects.slice(0, 6).map((p, i) => <ProjectCard key={p.id} p={p} i={i} onView={onView} />)}
         </div>
       </div>
     </section>
@@ -1021,7 +1029,7 @@ function ProjectsSection({ onView }: { onView: (project: typeof PROJECTS[0]) => 
 
 // ─── Sectors ──────────────────────────────────────────────────────────────────
 
-function SectorsSection() {
+function SectorsSection({ projects }: { projects: HomeProject[] }) {
   return (
     <section id="climate-finance" className="py-20 lg:py-24 bg-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-10">
@@ -1031,6 +1039,7 @@ function SectorsSection() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {SECTORS.map((s, i) => {
+            const count = projects.filter(project => project.sector === s.name || project.tag.includes(s.name.split(" ")[0])).length;
             const Icon = s.icon;
             return (
               <motion.a href="#projects" key={s.name} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ delay: i * 0.07 }}
@@ -1039,7 +1048,7 @@ function SectorsSection() {
                   <Icon className="w-5 h-5 text-[#1c2d7a] group-hover:text-white transition-colors" />
                 </div>
                 <div className="font-bold text-xs text-[#1c2d7a] group-hover:text-white mb-0.5 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>{s.name}</div>
-                <div className="text-[11px] text-muted-foreground group-hover:text-white/60 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>{s.count} projects</div>
+                <div className="text-[11px] text-muted-foreground group-hover:text-white/60 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>{count} projects</div>
               </motion.a>
             );
           })}
@@ -1239,17 +1248,60 @@ function Footer() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 function RequireRole({ role, children }: { role: Role | Role[]; children: React.ReactElement }) {
-  const { user } = useAuth();
+  const { user, initializing } = useAuth();
   const allowed = Array.isArray(role) ? role : [role];
+  if (initializing) return null; // wait for session restore before deciding
   if (!user) return <Navigate to="/" replace />;
   if (!allowed.includes(user.role)) return <Navigate to={roleHome(user.role)} replace />;
   return children;
 }
 
+function toHomeProject(project: StoreProject, index: number): HomeProject {
+  const fallbackImage = PROJECTS[index % PROJECTS.length].img;
+  const tag = project.wef.length ? project.wef.join(" - ") : project.sector;
+  const uploadedImage = project.coverImageUrl || project.imageUrl || project.attachments.find(attachment => attachment.type.startsWith("image/"))?.dataUrl;
+  return {
+    id: project.id,
+    title: project.title,
+    sector: project.sector,
+    location: project.province,
+    investment: project.fundingGapUSD > 0 ? "Funding gap available" : "Seeking partners",
+    status: project.status === "Approved" ? "Published" : project.status,
+    summary: project.summary,
+    img: fallbackImage,
+    coverImageUrl: uploadedImage,
+    icon: PROJECTS[index % PROJECTS.length].icon,
+    tag,
+    updated: project.updated,
+  };
+}
+
+async function hydrateHomeProjectCover(project: HomeProject): Promise<HomeProject> {
+  if (!project.coverImageUrl?.includes("/files/")) return project;
+  try {
+    return { ...project, coverImageUrl: await fetchFileDataUrl(project.coverImageUrl.split("/files/").pop()?.split("/")[0] || "") };
+  } catch { return { ...project, coverImageUrl: undefined }; }
+}
+
 function Landing() {
   const [authMode, setAuthMode] = useState<AuthMode>(null);
-  const [selectedProject, setSelectedProject] = useState<typeof PROJECTS[0] | null>(null);
+  const [projects, setProjects] = useState<HomeProject[]>([]);
+  const [selectedProject, setSelectedProject] = useState<HomeProject | null>(null);
   const scrollY = useScrollY();
+
+  useEffect(() => {
+    getCatalogue({ pageSize: 100 }).then(async page => {
+      const apiProjects = await Promise.all(page.data.map((project, index) => {
+        const mapped = toHomeProject(mapApiProjectToStore(project, index + 1), index);
+        return hydrateHomeProjectCover(mapped);
+      }));
+      setProjects(apiProjects);
+    }).catch(() => setProjects([]));
+  }, []);
+
+  const recentProject = projects
+    .filter(project => Boolean(project.coverImageUrl))
+    .sort((a, b) => String(b.updated ?? "").localeCompare(String(a.updated ?? "")))[0];
 
   const openAuth = (m: AuthMode) => setAuthMode(m);
   const closeAuth = () => setAuthMode(null);
@@ -1265,10 +1317,10 @@ function Landing() {
         <AnnouncementTicker />
         <Navbar scrollY={scrollY} onAuth={openAuth} />
       </div>
-      <Hero onAuth={openAuth} />
-      <StatsBar />
-      <ProjectsSection onView={setSelectedProject} />
-      <SectorsSection />
+      <Hero onAuth={openAuth} recentProject={recentProject} />
+      <StatsBar projects={projects} />
+      <ProjectsSection projects={projects} onView={setSelectedProject} />
+      <SectorsSection projects={projects} />
       <WhySection />
       <PartnersSection />
       <ProcessSection />

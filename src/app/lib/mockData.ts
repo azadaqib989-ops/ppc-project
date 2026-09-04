@@ -2,10 +2,26 @@
 
 export type ProjectStatus = "Draft" | "Submitted" | "Under Review" | "Approved" | "Returned";
 
+export interface ProjectTeamMember { lead: boolean; name: string; designation?: string; email?: string; phone?: string; website?: string; socialProfiles?: string[] }
+export interface ProjectShareholder { name: string; type?: string; sharePercentage?: number; investmentAmount?: number; email?: string; website?: string; status?: string }
+export interface ProjectImpactMetric { name: string; value: string; unit?: string }
+export interface ProjectFuturePlan { phaseName: string; title: string; timeline?: string; description?: string; estimatedCost?: number }
+export interface ProjectDocument { documentType?: string; filename: string; url?: string; size?: number; uploader?: string }
+export interface ProjectVideo { title: string; url: string; duration?: string }
+export interface ProjectExtendedDetails {
+  abstract?: string; fullDescription?: string; primarySector?: string; subSectors?: string[]; sdgGoals?: string[]; trl?: string;
+  priorityLevel?: string; riskLevel?: string; address?: string; city?: string; latitude?: number; longitude?: number; durationMonths?: number;
+  currency?: string; researchFund?: number; equityFund?: number; debtLoan?: number; grantAmount?: number; minimumInvestment?: number; expectedRoi?: number; paybackPeriodMonths?: number;
+  directBeneficiaries?: number; indirectBeneficiaries?: number; additionalImpactMetrics?: ProjectImpactMetric[];
+  organizationName?: string; organizationType?: string; organizationWebsite?: string; projectLead?: ProjectTeamMember; teamMembers?: ProjectTeamMember[]; shareholders?: ProjectShareholder[];
+  futurePlans?: ProjectFuturePlan[]; documents?: ProjectDocument[]; videos?: ProjectVideo[]; futurePlansNotes?: string; tags?: string[]; infographicUrl?: string; relatedProjectIds?: string[]; sdgAssociations?: string[];
+}
+
 export interface PipelineProject {
   id: number;
   title: string;
   imageUrl?: string;
+  coverImageUrl?: string;
   province: string;
   district?: string;
   sector: string;
@@ -30,6 +46,7 @@ export interface PipelineProject {
   riskNotes?: string;
   submittedBy: string;
   updated: string; // ISO date
+  extendedDetails?: ProjectExtendedDetails;
 }
 
 export const PROVINCES = [

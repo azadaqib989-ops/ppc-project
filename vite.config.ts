@@ -37,8 +37,9 @@ export default defineConfig({
   server: {
     proxy: {
       // Forward API calls to the backend to avoid CORS issues in dev.
+      // Backend listens on http://localhost:5188 per its Properties/launchSettings.json.
       '/api/v1': {
-        target: 'http://localhost:5187',
+        target: 'http://localhost:5188',
         changeOrigin: true,
       },
     },

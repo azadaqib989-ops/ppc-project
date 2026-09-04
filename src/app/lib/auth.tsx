@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { getCurrentUserProfile, loginApi, logoutApi } from "./api";
 export type Role = "admin" | "reviewer" | "focal" | "investor";
 export const API_BASE_URL = "/api/v1";
 
@@ -14,17 +15,32 @@ export interface AuthUser {
   province?: string;
 }
 
-const DEMO_USERS: Array<AuthUser & { password: string }> = [
-  { id: "1", email: "admin@pcpp.gov.pk", password: "Admin@123", role: "admin", name: "Ayesha Raza", title: "Central Ministry Administrator" },
-  { id: "2", email: "reviewer@pcpp.gov.pk", password: "Reviewer@123", role: "reviewer", name: "Farrukh Zaman", title: "Reviewer / Analyst" },
-  { id: "3", email: "focal@pcpp.gov.pk", password: "Focal@123", role: "focal", name: "M. Tariq Bashir", province: "Punjab", provinceId: "punjab", title: "Provincial Focal Point — Punjab" },
-  { id: "4", email: "focal.sindh@pcpp.gov.pk", password: "Focal@123", role: "focal", name: "Sana Iqbal", province: "Sindh", provinceId: "sindh", title: "Provincial Focal Point — Sindh" },
-  { id: "5", email: "investor@pcpp.gov.pk", password: "Investor@123", role: "investor", name: "James Whitfield", organization: "Global Climate Fund", title: "Investment Partner" },
-];
+function normalizeAuthUser(user: {
+  id?: string | number; email?: string; name?: string;
+  provinceName?: string | null; title?: string; province?: string; organization?: string | null;
+  role?: string; provinceId?: string | null;
+}): AuthUser {
+  const rawRole = (user.role ?? "investor").toString().toLowerCase();
+  const role: Role = (["admin", "reviewer", "focal", "investor"] as const).includes(rawRole as Role)
+    ? (rawRole as Role)
+    : "investor";
+  return {
+    id: String(user.id ?? ""),
+    email: user.email ?? "",
+    name: user.name ?? "",
+    role,
+    organization: user.organization ?? undefined,
+    provinceId: user.provinceId ?? undefined,
+    title: user.title,
+    province: user.province ?? user.provinceName ?? undefined,
+  };
+}
 
 interface AuthContextValue {
   user: AuthUser | null;
   accessToken: string | null;
+  /** True until the session has been restored from localStorage on first mount. */
+  initializing: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
   logout: () => void;
   // Sets a session user directly without calling the API — used by the demo signup flow, which is not backed by a real endpoint.
@@ -34,37 +50,86 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = "pcpp_auth_user";
 const TOKEN_KEY = "pcpp_access_token";
+const REFRESH_TOKEN_KEY = "pcpp_refresh_token";
+
+// Read the persisted session synchronously so route guards never see a brief
+// null user (which previously caused a refresh on /dashboard/* to bounce to /).
+function readStoredAuth(): { user: AuthUser | null; accessToken: string | null } {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const raw = localStorage.getItem(STORAGE_KEY);
+  let user: AuthUser | null = null;
+  if (raw) {
+    try { user = JSON.parse(raw); } catch { /* ignore corrupt storage */ }
+  }
+  return { user, accessToken: token };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const initial = readStoredAuth();
+  const [user, setUser] = useState<AuthUser | null>(initial.user);
+  const [accessToken, setAccessToken] = useState<string | null>(initial.accessToken);
+  const [initializing, setInitializing] = useState(Boolean(initial.accessToken && !initial.user));
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
     const token = localStorage.getItem(TOKEN_KEY);
-    if (raw) {
-      try { setUser(JSON.parse(raw)); } catch { /* ignore corrupt storage */ }
-    }
-    if (token) setAccessToken(token);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
 
-    if (raw) setUser(JSON.parse(raw));
+    if (token && !raw) {
+      getCurrentUserProfile()
+        .then(profile => {
+          const hydrated = normalizeAuthUser(profile as any);
+          if (hydrated.email) {
+            setUser(hydrated);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(hydrated));
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          localStorage.removeItem(STORAGE_KEY);
+          setAccessToken(null);
+          setUser(null);
+        })
+        .finally(() => setInitializing(false));
+    }
+
+    if (!token && refreshToken) {
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
   }, []);
 
   const login = async (email: string, password: string) => {
-    const authUser = DEMO_USERS.find(u => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password);
-    if (!authUser) throw new Error("Invalid demo email or password.");
+    const response = await loginApi(email, password);
+    const token = response.accessToken;
+    const refreshToken = response.refreshToken;
+    const authUser = normalizeAuthUser(response.user);
+
+    if (!authUser.email) {
+      throw new Error("Login response did not include user details.");
+    }
 
     setUser(authUser);
+    setAccessToken(token ?? null);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-    localStorage.removeItem(TOKEN_KEY);
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
     return authUser;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    try {
+      if (refreshToken) {
+        await logoutApi(refreshToken);
+      }
+    } catch { /* ignore API logout errors */ }
+
     setUser(null);
     setAccessToken(null);
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
   };
 
   const setSessionUser = (authUser: AuthUser) => {
@@ -72,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
   };
 
-  return <AuthContext.Provider value={{ user, accessToken, login, logout, setSessionUser }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, accessToken, initializing, login, logout, setSessionUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

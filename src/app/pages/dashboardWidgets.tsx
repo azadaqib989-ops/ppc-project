@@ -1,7 +1,75 @@
 import { type ReactNode } from "react";
+import { motion } from "motion/react";
 import { Paperclip, X, Download } from "lucide-react";
 import { cn } from "../components/ui/utils";
 import type { ProjectAttachment } from "../lib/store";
+
+/* ─── Shared chart primitives (consistent look across all dashboards) ─── */
+
+const CHART_FONT = "Arial, sans-serif";
+
+export function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name?: string; value: number; color: string; dataKey?: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+      className="bg-white/95 backdrop-blur-sm border border-slate-200/80 rounded-xl shadow-lg shadow-slate-200/50 px-4 py-3 min-w-[140px]"
+    >
+      {label && <p className="text-[11px] font-bold text-[#1c2d7a] mb-1.5 tracking-wide uppercase">{label}</p>}
+      <div className="space-y-1">
+        {payload.map((entry, i) => (
+          <div key={i} className="flex items-center gap-2 text-[11.5px]">
+            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+            <span className="text-slate-500">{entry.name}</span>
+            <span className="ml-auto font-semibold text-[#0f172a] tabular-nums">{typeof entry.value === "number" ? entry.value.toLocaleString() : entry.value}</span>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+export function ChartLegend({ payload }: { payload?: Array<{ value: string; color: string }> }) {
+  if (!payload?.length) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-2">
+      {payload.map((entry, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+          <span className="text-[11px] font-medium text-slate-500" style={{ fontFamily: CHART_FONT }}>{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function PieActiveShape(props: any) {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, percent } = props;
+  const sin = Math.sin(-Math.PI / 180 * startAngle);
+  const cos = Math.cos(-Math.PI / 180 * startAngle);
+  const sin2 = Math.sin(-Math.PI / 180 * endAngle);
+  const cos2 = Math.cos(-Math.PI / 180 * endAngle);
+  const r = outerRadius + 4;
+  const x0 = cx + r * sin;
+  const y0 = cy + r * cos;
+  const x1 = cx + r * sin2;
+  const y1 = cy + r * cos2;
+  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
+  const path = `M ${x0},${y0} A ${r},${r} 0 ${largeArcFlag} 1 ${x1},${y1} L ${cx},${cy} Z`;
+  return (
+    <g>
+      <text x={cx} y={cy - 6} textAnchor="middle" fill="#1c2d7a" style={{ fontSize: 22, fontWeight: 700, fontFamily: CHART_FONT }}>
+        {`${((percent ?? 0) * 100).toFixed(0)}%`}
+      </text>
+      <text x={cx} y={cy + 14} textAnchor="middle" fill="#64748b" style={{ fontSize: 11, fontFamily: CHART_FONT }}>
+        {payload?.name}
+      </text>
+      <path d={path} fill={fill} />
+    </g>
+  );
+}
 
 export function KpiCard({
   icon: Icon, label, value, sub, accent = "#1c2d7a",
@@ -13,7 +81,7 @@ export function KpiCard({
       </div>
       <div className="min-w-0">
         <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">{label}</div>
-        <div className="text-xl font-bold text-[#0f172a] mt-0.5" style={{ fontFamily: "'Playfair Display', serif" }}>{value}</div>
+        <div className="text-xl font-bold text-[#0f172a] mt-0.5 tabular-nums">{value}</div>
         {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
       </div>
     </div>
@@ -25,7 +93,7 @@ export function Panel({ title, description, action, children, className }: { tit
     <div className={cn("bg-white border border-border rounded-xl p-5 shadow-sm", className)}>
       <div className="flex items-start justify-between mb-4 gap-3">
         <div>
-          <h3 className="text-[14px] font-bold text-[#1c2d7a]" style={{ fontFamily: "'Inter', sans-serif" }}>{title}</h3>
+          <h3 className="text-[14px] font-bold text-[#1c2d7a]">{title}</h3>
           {description && <p className="text-[11.5px] text-muted-foreground mt-0.5">{description}</p>}
         </div>
         {action}
