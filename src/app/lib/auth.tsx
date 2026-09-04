@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getCurrentUserProfile, loginApi, logoutApi } from "./api";
 export type Role = "admin" | "reviewer" | "focal" | "investor";
-export const API_BASE_URL = "/api/v1";
+export const API_BASE_URL = "https://ppca.technologyinn.net/api/v1";
 
 export interface AuthUser {
   id: string;
