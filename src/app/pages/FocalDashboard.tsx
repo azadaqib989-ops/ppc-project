@@ -641,7 +641,7 @@ function SupportingRecordsEditor({ value, onChange }: { value: ProjectExtendedDe
   </div>;
 }
 
-function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProject?: StoreProject | null; onCreated: () => void; onCancel: () => void }) {
+export function SubmissionWizard({ editingProject, onCreated, onCancel, allowProvinceSelection = false }: { editingProject?: StoreProject | null; onCreated: () => void; onCancel: () => void; allowProvinceSelection?: boolean }) {
   const { user } = useAuth();
   const [step, setStep] = useState(0);
   const [draftId, setDraftId] = useState<string | null>(editingProject?.apiId ?? null);
@@ -697,6 +697,8 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
   const [apiId, setApiId] = useState<string | undefined>(editingProject?.apiId);
   const [sectorOptions, setSectorOptions] = useState<{ id: string; name: string; color: string }[]>([]);
   const [provinceName, setProvinceName] = useState(user?.province ?? "");
+  const [provinceOptions, setProvinceOptions] = useState<{ id: string; name: string }[]>([]);
+  const [selectedProvinceId, setSelectedProvinceId] = useState(user?.provinceId ?? "");
 
   useEffect(() => {
     getSectors().then(options => {
@@ -706,6 +708,14 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
   }, []);
 
   useEffect(() => {
+    if (allowProvinceSelection) {
+      getProvinces().then(provinces => {
+        setProvinceOptions(provinces);
+        const matched = editingProject?.province ? provinces.find(province => province.name === editingProject.province) : undefined;
+        setSelectedProvinceId(current => matched?.id ?? current ?? provinces[0]?.id ?? "");
+      }).catch(() => toast.error("Unable to load the province list."));
+      return;
+    }
     if (user?.province) {
       setProvinceName(user.province);
       return;
@@ -714,7 +724,9 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
     getProvinces()
       .then(provinces => setProvinceName(provinces.find(province => province.id === user.provinceId)?.name ?? "Province unavailable"))
       .catch(() => setProvinceName("Province unavailable"));
-  }, [user?.province, user?.provinceId]);
+  }, [allowProvinceSelection, user?.province, user?.provinceId, editingProject?.province]);
+
+  const displayProvinceName = allowProvinceSelection ? (provinceOptions.find(p => p.id === selectedProvinceId)?.name ?? "Select a province") : provinceName;
 
   const toggleWef = (w: "Water" | "Energy" | "Food") => setWef(w0 => (w0.includes(w) ? w0.filter(x => x !== w) : [...w0, w]));
 
@@ -758,7 +770,8 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
   ][step];
 
   const saveToApi = async () => {
-    if (!user?.provinceId) throw new Error("Your focal account is not assigned to a province.");
+    const effectiveProvinceId = allowProvinceSelection ? selectedProvinceId : user?.provinceId;
+    if (!effectiveProvinceId) throw new Error(allowProvinceSelection ? "Select a province for this project." : "Your focal account is not assigned to a province.");
     if (!title.trim()) throw new Error("Project title is required.");
     if (!summary.trim()) throw new Error("Project summary is required by the server.");
     const costUsd = Number(cost) * 1_000_000;
@@ -773,7 +786,7 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
     const sectorId = sectorOptions.find(option => option.name === sector)?.id;
     if (!sectorId) throw new Error("Project sector reference data is unavailable.");
     const payload = {
-      title: title.trim(), summary: summary.trim(), coverImageUrl: coverImageUrl || null, provinceId: user.provinceId,
+      title: title.trim(), summary: summary.trim(), coverImageUrl: coverImageUrl || null, provinceId: effectiveProvinceId,
       district: district.trim() || null, sectorId, costUsd,
       fundingGapUsd, coFinancingUsd: coFinancing.trim() ? Number(coFinancing) * 1_000_000 : null,
       beneficiaries: Number(beneficiaries) || 0, jobs: Number(jobs) || 0, readiness: editingProject?.readiness ?? 40,
@@ -897,7 +910,13 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
         <div className="grid sm:grid-cols-2 gap-3 w-full">
           <div className="sm:col-span-2">
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Province</label>
-            <div className="flex items-center gap-1.5 text-[12.5px] text-[#0f172a] bg-[#f4f7fb] border border-border rounded-lg p-2.5" aria-readonly="true"><MapPin className="w-3.5 h-3.5 text-muted-foreground" /> {provinceName || "Loading province..."} <span className="text-muted-foreground ml-1">(fixed to your focal-point scope)</span></div>
+            {allowProvinceSelection ? (
+              <select value={selectedProvinceId} onChange={e => setSelectedProvinceId(e.target.value)} className="w-full text-[12.5px] border border-border rounded-lg p-2.5 bg-[#f4f7fb]">
+                {provinceOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            ) : (
+              <div className="flex items-center gap-1.5 text-[12.5px] text-[#0f172a] bg-[#f4f7fb] border border-border rounded-lg p-2.5" aria-readonly="true"><MapPin className="w-3.5 h-3.5 text-muted-foreground" /> {provinceName || "Loading province..."} <span className="text-muted-foreground ml-1">(fixed to your focal-point scope)</span></div>
+            )}
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">District / city</label>
@@ -1045,7 +1064,7 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
       {step === 5 && (
         <div className="w-full space-y-2 text-[12.5px]">
           {[
-            ["Title", title || "—"], ["Province", provinceName || "Loading province..."], ["District", district || "—"], ["Sector", sector],
+            ["Title", title || "—"], ["Province", displayProvinceName || "Loading province..."], ["District", district || "—"], ["Sector", sector],
             ["Start date", startDate || "—"], ["End date", endDate || "—"],
             ["Total cost", cost ? `$${cost}M` : "—"], ["Funding gap", fundingGap ? `$${fundingGap}M` : "—"], ["Co-financing", coFinancing ? `$${coFinancing}M` : "—"],
             ["Implementing agency", implementingAgency || "—"], ["Contact", contactName ? `${contactName}${contactEmail ? " · " + contactEmail : ""}` : "—"],
@@ -1067,7 +1086,7 @@ function SubmissionWizard({ editingProject, onCreated, onCancel }: { editingProj
             <p className="mt-1 text-[11.5px] leading-5 text-muted-foreground">{summary || "Add a concise summary to help reviewers understand the project quickly."}</p>
             <div className="mt-4 space-y-2 border-t border-border pt-3 text-[11.5px]">
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Current step</span><span className="font-semibold text-[#0f172a]">{step + 1} of {STEPS.length}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-muted-foreground">Province</span><span className="font-semibold text-right text-[#0f172a]">{provinceName || "Loading..."}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-muted-foreground">Province</span><span className="font-semibold text-right text-[#0f172a]">{displayProvinceName || "Loading..."}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Sector</span><span className="font-semibold text-right text-[#0f172a]">{sector || "Not selected"}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Funding gap</span><span className="font-semibold text-right text-[#0f172a]">{fundingGap ? `$${fundingGap}M` : "Not entered"}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">WEF dimensions</span><span className="font-semibold text-right text-[#0f172a]">{wef.length ? wef.join(", ") : "Required"}</span></div>

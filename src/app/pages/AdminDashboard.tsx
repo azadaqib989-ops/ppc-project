@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import {
   LayoutDashboard, ClipboardList, Map as MapIcon, Waves, Users2, FileBarChart2,
   Building2, HandCoins, TrendingUp, Check, RotateCcw, Search, MessageSquare, Plus,
-  ShieldCheck, Filter, Download, Loader2, AlertCircle, Pencil,
+  ShieldCheck, Filter, Download, Loader2, AlertCircle, Pencil, FilePlus2,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -14,6 +14,7 @@ import {
 import { DashboardShell, type NavItem } from "./DashboardShell";
 import { KpiCard, Panel, StatusBadge, SaturationBadge, AttachmentPicker, AttachmentList, filesToAttachments } from "./dashboardWidgets";
 import { ProjectDetailPage } from "./ProjectDetail";
+import { SubmissionWizard } from "./FocalDashboard";
 import { useAuth } from "../lib/auth";
 import {
   PROVINCES, SECTOR_DATA, WEF_NEXUS_SPLIT, PIPELINE_TREND, STATUS_DISTRIBUTION,
@@ -37,6 +38,7 @@ function useAdminNav(isAdmin: boolean): NavItem[] {
   return [
     { key: "overview", label: "Executive Overview", icon: LayoutDashboard },
     { key: "review", label: isAdmin ? "Project Review Queue" : "Review & Comment", icon: ClipboardList },
+    ...(isAdmin ? [{ key: "manage", label: "Add / Edit Project", icon: FilePlus2 }] : []),
     { key: "geography", label: "Geography & Provinces", icon: MapIcon },
     { key: "nexus", label: "WEF Nexus", icon: Waves },
     ...(isAdmin ? [{ key: "users", label: "Users & Roles", icon: Users2 }] : []),
@@ -165,7 +167,7 @@ function OverviewTab() {
                   <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: "1px solid #e2e8f0" }} />
                 </RadialBarChart>
               </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ right: "36%" }}>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div className="text-2xl font-bold text-[#1c2d7a] tracking-tight">{totalStatus}</div>
                 <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Total</div>
               </div>
@@ -288,7 +290,7 @@ function ReturnModal({ onCancel, onConfirm, submitting }: { onCancel: () => void
   );
 }
 
-function ReviewQueueTab({ isAdmin }: { isAdmin: boolean }) {
+function ReviewQueueTab({ isAdmin, onEdit, onAddNew }: { isAdmin: boolean; onEdit: (p: StoreProject) => void; onAddNew: () => void }) {
   const { user } = useAuth();
   const [projects, setProjects] = useState<StoreProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -411,6 +413,18 @@ function ReviewQueueTab({ isAdmin }: { isAdmin: boolean }) {
               <RotateCcw className="w-4 h-4" /> Return for changes
             </button>
           </div>
+          <button onClick={() => { onEdit(viewing); setViewing(null); }} className="w-full inline-flex items-center justify-center gap-2 bg-white text-[#1c2d7a] border border-slate-300 font-bold text-sm px-5 py-3 rounded-xl hover:border-[#1c2d7a] hover:bg-[#eef0f9] transition-colors shadow-sm">
+            <Pencil className="w-4 h-4" /> Edit project details
+          </button>
+          <div className="border-t border-slate-100 pt-4 space-y-2.5">
+            <h4 className="text-[12.5px] font-bold text-slate-700">Add a comment</h4>
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="Add a comment for the provincial focal point…" className="w-full text-[13px] border border-slate-200 rounded-xl p-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#1c2d7a]/20 resize-none" />
+            <AttachmentList attachments={commentFiles} onRemove={id => setCommentFiles(a => a.filter(f => f.id !== id))} dense />
+            <div className="flex items-center justify-between gap-2">
+              <AttachmentPicker label="Attach file" onAdd={addCommentFiles} />
+              <button onClick={() => addComment(viewing.id)} disabled={addingComment || (commentFiles.length === 0 && !comment.trim())} className="flex-1 bg-[#1c2d7a] text-white font-bold text-sm py-2.5 rounded-xl hover:bg-[#17a4c2] transition-colors shadow-sm disabled:opacity-50">{addingComment ? "Saving comment..." : "Add comment"}</button>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="w-full space-y-2.5">
@@ -436,6 +450,14 @@ function ReviewQueueTab({ isAdmin }: { isAdmin: boolean }) {
         description={isAdmin ? "Submissions awaiting a ministry decision" : "Examine submissions and leave comments for the ministry"}
         action={
           <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={onAddNew}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-white bg-[#1c2d7a] rounded-lg hover:bg-[#17a4c2] transition-colors shadow-sm"
+              >
+                <FilePlus2 className="w-3.5 h-3.5" /> New project
+              </button>
+            )}
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[12px] font-semibold shadow-sm">
               <button
                 onClick={() => setStatusFilter("Pending")}
@@ -527,6 +549,13 @@ function ReviewQueueTab({ isAdmin }: { isAdmin: boolean }) {
                     <div className="flex items-center justify-end gap-1.5">
                       {isAdmin ? (
                         <>
+                          <button
+                            onClick={() => onEdit(p)}
+                            title="Edit project"
+                            className="p-2 rounded-lg bg-slate-100 text-[#1c2d7a] hover:bg-[#1c2d7a] hover:text-white transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => decide(p.id, "Approved", "Approved by ministry administrator.")}
                             title="Approve"
@@ -1108,7 +1137,7 @@ function ReportsTab() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4">
         {kpis.map(k => <KpiCard key={k.label} icon={k.icon} label={k.label} value={k.value} sub={k.sub} accent={k.accent} />)}
       </div>
 
@@ -1290,13 +1319,14 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [active, setActive] = useState("overview");
+  const [editingProject, setEditingProject] = useState<StoreProject | null>(null);
   const navItems = useAdminNav(isAdmin);
 
   return (
     <DashboardShell
       navItems={navItems}
       active={active}
-      onNavigate={setActive}
+      onNavigate={key => { setEditingProject(null); setActive(key); }}
       title={isAdmin ? "Ministry Executive Dashboard" : "Reviewer / Analyst Workspace"}
       subtitle="Pakistan Climate Project Pipeline · National oversight"
     >
@@ -1307,7 +1337,22 @@ export default function AdminDashboard() {
         </div>
       )}
       {active === "overview" && <OverviewTab />}
-      {active === "review" && <ReviewQueueTab isAdmin={isAdmin} />}
+      {active === "review" && (
+        <ReviewQueueTab
+          isAdmin={isAdmin}
+          onEdit={p => { setEditingProject(p); setActive("manage"); }}
+          onAddNew={() => { setEditingProject(null); setActive("manage"); }}
+        />
+      )}
+      {active === "manage" && isAdmin && (
+        <SubmissionWizard
+          key={editingProject?.id ?? "new"}
+          editingProject={editingProject}
+          allowProvinceSelection
+          onCreated={() => { setEditingProject(null); setActive("review"); }}
+          onCancel={() => { setEditingProject(null); setActive("review"); }}
+        />
+      )}
       {active === "geography" && <GeographyTab />}
       {active === "nexus" && <NexusTab />}
       {active === "users" && isAdmin && <UsersTab />}

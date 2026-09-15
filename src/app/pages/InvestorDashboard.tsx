@@ -389,11 +389,11 @@ function AnalyticsTab({ catalogue }: { catalogue: StoreProject[] }) {
   const wefMix = (["Water", "Energy", "Food"] as const)
     .map((name, i) => ({ name, value: catalogue.filter(p => p.wef.includes(name)).length, fill: INVESTOR_BLUE_SCALE[(i + 3) % INVESTOR_BLUE_SCALE.length] }))
     .filter(d => d.value > 0);
-  const sectorCostGap = sectorMix.map(s => ({
-    name: s.name,
-    cost: Math.round(catalogue.filter(p => p.sector === s.name).reduce((sum, p) => sum + p.costUSD, 0) / 100_000) / 10,
-    gap: Math.round(catalogue.filter(p => p.sector === s.name).reduce((sum, p) => sum + p.fundingGapUSD, 0) / 100_000) / 10,
-  }));
+  const sectorCostGap = sectorMix.map(s => {
+    const cost = Math.round(catalogue.filter(p => p.sector === s.name).reduce((sum, p) => sum + p.costUSD, 0) / 100_000) / 10;
+    const gap = Math.round(catalogue.filter(p => p.sector === s.name).reduce((sum, p) => sum + p.fundingGapUSD, 0) / 100_000) / 10;
+    return { name: s.name, cost, gap, available: Math.round((cost - gap) * 10) / 10 };
+  });
   if (viewing) return <ProjectDetailPage project={viewing} showComments={false} onBack={() => setViewing(null)} />;;
 
   return (
@@ -403,7 +403,7 @@ function AnalyticsTab({ catalogue }: { catalogue: StoreProject[] }) {
           <BarChart data={readinessBuckets}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef0f9" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
             <Bar dataKey="count" fill="#1c2d7a" radius={[4, 4, 0, 0]} name="Projects" onClick={data => setSelected(data.projects)} />
           </BarChart>
@@ -442,16 +442,16 @@ function AnalyticsTab({ catalogue }: { catalogue: StoreProject[] }) {
           </PieChart>
         </ResponsiveContainer>
       </Panel>
-      {sectorCostGap.length > 0 && <Panel title="Investment value vs funding gap" description="Total cost compared with unfunded gap by sector, USD millions" className="lg:col-span-2">
+      {sectorCostGap.length > 0 && <Panel title="Investment value vs funding gap" description="Available funding vs unfunded gap by sector, USD millions" className="lg:col-span-2">
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={sectorCostGap} barSize={22} margin={{ top: 10 }}>
+          <BarChart data={sectorCostGap} barSize={32} margin={{ top: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef0f9" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-14} textAnchor="end" height={56} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={value => [`$${Number(value)}M`, ""]} />
+            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value, name) => [`$${Number(value)}M`, name]} />
             <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
-            <Bar dataKey="cost" name="Total investment value" fill="#1c2d7a" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="gap" name="Funding gap" fill="#17a4c2" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="available" name="Available funding" stackId="funding" fill="#1c2d7a" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="gap" name="Funding gap" stackId="funding" fill="#17a4c2" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </Panel>}
