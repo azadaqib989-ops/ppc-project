@@ -1,15 +1,78 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { Menu, X, LogOut, Bell, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
+import { Menu, X, LogOut, Bell, RotateCcw, KeyRound, AlertCircle } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { resetDemoData } from "../lib/store";
-import { getNotifications as getApiNotifications, markAllNotificationsRead } from "../lib/api";
+import { getNotifications as getApiNotifications, markAllNotificationsRead, changePasswordApi } from "../lib/api";
 import type { ApiNotification } from "../lib/api";
 
 export interface NavItem {
   key: string;
   label: string;
   icon: React.ElementType;
+}
+
+function ChangePasswordModal({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirm password do not match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await changePasswordApi(userId, oldPassword, newPassword, confirmPassword);
+      toast.success("Password changed successfully.");
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not change your password.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[15px] font-bold text-[#1c2d7a]">Change password</h3>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-100 text-muted-foreground"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Current password</label>
+            <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} required className="w-full text-[12.5px] border border-border rounded-lg p-2.5 bg-[#f4f7fb]" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">New password</label>
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={8} className="w-full text-[12.5px] border border-border rounded-lg p-2.5 bg-[#f4f7fb]" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Confirm new password</label>
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required minLength={8} className="w-full text-[12.5px] border border-border rounded-lg p-2.5 bg-[#f4f7fb]" />
+          </div>
+          {error && (
+            <div className="flex items-start gap-1.5 text-[12px] text-[#c0455f] bg-[#fbe9ec] rounded-lg px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {error}
+            </div>
+          )}
+          <button type="submit" disabled={saving} className="w-full bg-[#1c2d7a] text-white font-bold text-sm py-2.5 rounded-lg hover:bg-[#17a4c2] transition-colors disabled:opacity-50">
+            {saving ? "Changing password..." : "Change password"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 export function DashboardShell({
@@ -27,6 +90,7 @@ export function DashboardShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs] = useState<ApiNotification[]>([]);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -107,11 +171,16 @@ export function DashboardShell({
           <button onClick={handleLogout} className="w-full flex items-center gap-2 justify-center text-[12.5px] font-semibold text-white/70 hover:text-white border border-white/15 hover:bg-white/5 rounded-lg py-2 transition-colors">
             <LogOut className="w-3.5 h-3.5" /> Sign out
           </button>
+          <button onClick={() => setShowChangePassword(true)} className="w-full flex items-center gap-2 justify-center text-[12px] font-semibold text-white/60 hover:text-white mt-2 py-2 transition-colors">
+            <KeyRound className="w-3.5 h-3.5" /> Change password
+          </button>
           <button onClick={handleReset} className="w-full flex items-center gap-2 justify-center text-[11px] font-medium text-white/35 hover:text-white/70 mt-2 py-1.5 transition-colors">
             <RotateCcw className="w-3 h-3" /> Reset demo data
           </button>
         </div>
       </aside>
+
+      {showChangePassword && user && <ChangePasswordModal userId={user.id} onClose={() => setShowChangePassword(false)} />}
 
       {mobileOpen && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setMobileOpen(false)} />}
 

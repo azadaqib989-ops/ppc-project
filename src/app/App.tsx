@@ -6,12 +6,12 @@ import {
   Waves, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Menu, X, MapPin,
   TrendingUp, Shield, Users, Globe, Mail, Phone, Twitter, Linkedin,
   Facebook, ExternalLink, BarChart3, Leaf, Eye, EyeOff, LogIn,
-  UserPlus, Building2, Check, AlertCircle,
+  UserPlus, Building2, Check, AlertCircle, KeyRound, ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
 import { useAuth, type Role } from "./lib/auth";
-import { fetchFileDataUrl, getCatalogue, mapApiProjectToStore, signupInvestor } from "./lib/api";
+import { fetchFileDataUrl, getCatalogue, mapApiProjectToStore, signupInvestor, forgotPasswordApi, verifyOtpApi, resetPasswordApi } from "./lib/api";
 import type { StoreProject } from "./lib/store";
 import AdminDashboard from "./pages/AdminDashboard";
 import InvestorDashboard from "./pages/InvestorDashboard";
@@ -138,6 +138,19 @@ const HERO_SLIDES = [
   },
 ];
 
+function buildHeroSlides(projects: HomeProject[]) {
+  if (!projects.length) return HERO_SLIDES;
+
+  const liveSlides = projects.slice(0, 5).map((project, index) => ({
+    img: project.coverImageUrl || `https://images.unsplash.com/${PROJECTS[index % PROJECTS.length].img}?w=1800&h=900&fit=crop&auto=format`,
+    label: project.sector || "National Project Pipeline",
+    heading: project.title,
+    sub: project.summary,
+  }));
+
+  return liveSlides.length ? liveSlides : HERO_SLIDES;
+}
+
 type HomeProject = {
   id: number | string;
   title: string;
@@ -198,7 +211,7 @@ const ANNOUNCEMENTS = [
 
 // ─── Auth Modal ───────────────────────────────────────────────────────────────
 
-type AuthMode = "login" | "signup" | null;
+type AuthMode = "login" | "signup" | "forgot" | null;
 
 function InputField({
   label, type = "text", placeholder, icon: Icon, value, onChange, required,
@@ -305,7 +318,7 @@ function AuthLoader({ label }: { label: string }) {
 
 type AuthPhase = "idle" | "loading" | "success";
 
-function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () => void }) {
+function LoginForm({ onSwitch, onForgot, onClose }: { onSwitch: () => void; onForgot: () => void; onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phase, setPhase] = useState<AuthPhase>("idle");
@@ -384,7 +397,7 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
             )}
 
             <div className="flex justify-end">
-              <button type="button" className="text-xs text-[#17a4c2] hover:underline font-medium" style={{ fontFamily: "'Inter', sans-serif" }}>
+              <button type="button" onClick={onForgot} className="text-xs text-[#17a4c2] hover:underline font-medium" style={{ fontFamily: "'Inter', sans-serif" }}>
                 Forgot password?
               </button>
             </div>
@@ -533,8 +546,177 @@ function SignupForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =
   );
 }
 
+type ForgotStep = "email" | "otp" | "reset" | "done";
+
+function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
+  const [step, setStep] = useState<ForgotStep>("email");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [phase, setPhase] = useState<AuthPhase>("idle");
+  const [error, setError] = useState("");
+
+  const requestOtp = async () => {
+    setError("");
+    setPhase("loading");
+    try {
+      await forgotPasswordApi(email.trim());
+      toast.success("If an account exists for that email, a code has been sent.");
+      setStep("otp");
+      setPhase("idle");
+    } catch (err: any) {
+      const message = err?.message || "Could not send the reset code.";
+      setError(message);
+      toast.error(message);
+      setPhase("idle");
+    }
+  };
+
+  const sendOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    void requestOtp();
+  };
+
+  const checkOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setPhase("loading");
+    try {
+      await verifyOtpApi(email.trim(), otp.trim());
+      toast.success("Code verified.");
+      setStep("reset");
+      setPhase("idle");
+    } catch (err: any) {
+      const message = err?.message || "The code is invalid or has expired.";
+      setError(message);
+      toast.error(message);
+      setPhase("idle");
+    }
+  };
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirm password do not match.");
+      return;
+    }
+    setPhase("loading");
+    try {
+      await resetPasswordApi(email.trim(), otp.trim(), newPassword, confirmPassword);
+      toast.success("Password reset successfully. Please sign in.");
+      setPhase("success");
+      setStep("done");
+    } catch (err: any) {
+      const message = err?.message || "Could not reset your password.";
+      setError(message);
+      toast.error(message);
+      setPhase("idle");
+    }
+  };
+
+  return (
+    <motion.div
+      key="forgot"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="w-full"
+    >
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-[#1c2d7a] flex items-center justify-center">
+          <KeyRound className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-[#1c2d7a]" style={{ fontFamily: "'Playfair Display', serif" }}>Reset your password</h2>
+          <p className="text-xs text-muted-foreground" style={{ fontFamily: "'Inter', sans-serif" }}>
+            {step === "email" && "Enter your account email to receive a verification code"}
+            {step === "otp" && "Enter the code sent to your email"}
+            {step === "reset" && "Choose a new password"}
+            {step === "done" && "All set"}
+          </p>
+        </div>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {phase === "loading" ? (
+          <AuthLoader label={step === "email" ? "Sending your verification code…" : step === "otp" ? "Verifying your code…" : "Updating your password…"} />
+        ) : step === "done" ? (
+          <motion.div
+            key="success"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center py-10 gap-3"
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 260, damping: 16 }}
+              className="w-14 h-14 rounded-full bg-[#eef0f9] flex items-center justify-center"
+            >
+              <Check className="w-7 h-7 text-[#1c2d7a]" />
+            </motion.div>
+            <p className="font-semibold text-[#1c2d7a] text-sm text-center" style={{ fontFamily: "'Inter', sans-serif" }}>Password reset. Sign in with your new password.</p>
+            <button type="button" onClick={onBack} className="text-xs font-bold text-[#1c2d7a] hover:underline">Back to sign in</button>
+          </motion.div>
+        ) : step === "email" ? (
+          <motion.form key="email" onSubmit={sendOtp} className="space-y-4">
+            <InputField label="Email address" type="email" placeholder="" value={email} onChange={setEmail} required />
+            {error && (
+              <div className="flex items-start gap-1.5 text-[12px] text-[#c0455f] bg-[#fbe9ec] rounded-lg px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+            <button type="submit" className="w-full bg-[#1c2d7a] text-white font-bold text-sm py-3 rounded-lg hover:bg-[#17a4c2] transition-colors duration-200 flex items-center justify-center gap-2" style={{ fontFamily: "'Inter', sans-serif" }}>
+              Send verification code <ArrowRight className="w-4 h-4" />
+            </button>
+            <button type="button" onClick={onBack} className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-[#1c2d7a]">
+              <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
+            </button>
+          </motion.form>
+        ) : step === "otp" ? (
+          <motion.form key="otp" onSubmit={checkOtp} className="space-y-4">
+            <InputField label="Verification code" placeholder="" value={otp} onChange={setOtp} required />
+            {error && (
+              <div className="flex items-start gap-1.5 text-[12px] text-[#c0455f] bg-[#fbe9ec] rounded-lg px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+            <button type="submit" className="w-full bg-[#1c2d7a] text-white font-bold text-sm py-3 rounded-lg hover:bg-[#17a4c2] transition-colors duration-200 flex items-center justify-center gap-2" style={{ fontFamily: "'Inter', sans-serif" }}>
+              Verify code <ArrowRight className="w-4 h-4" />
+            </button>
+            <div className="flex items-center justify-between">
+              <button type="button" onClick={() => setStep("email")} className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-[#1c2d7a]">
+                <ArrowLeft className="w-3.5 h-3.5" /> Change email
+              </button>
+              <button type="button" onClick={() => void requestOtp()} className="text-xs font-semibold text-[#17a4c2] hover:underline">
+                Resend code
+              </button>
+            </div>
+          </motion.form>
+        ) : (
+          <motion.form key="reset" onSubmit={submitReset} className="space-y-4">
+            <InputField label="New password" type="password" placeholder="" value={newPassword} onChange={setNewPassword} required />
+            <InputField label="Confirm new password" type="password" placeholder="" value={confirmPassword} onChange={setConfirmPassword} required />
+            {error && (
+              <div className="flex items-start gap-1.5 text-[12px] text-[#c0455f] bg-[#fbe9ec] rounded-lg px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+            <button type="submit" className="w-full bg-[#1c2d7a] text-white font-bold text-sm py-3 rounded-lg hover:bg-[#17a4c2] transition-colors duration-200 flex items-center justify-center gap-2" style={{ fontFamily: "'Inter', sans-serif" }}>
+              Reset password <ArrowRight className="w-4 h-4" />
+            </button>
+          </motion.form>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 function AuthModal({ mode, onClose }: { mode: AuthMode; onClose: () => void }) {
-  const [current, setCurrent] = useState<"login" | "signup">(mode || "login");
+  const [current, setCurrent] = useState<"login" | "signup" | "forgot">(mode || "login");
 
   useEffect(() => { if (mode) setCurrent(mode); }, [mode]);
 
@@ -576,21 +758,23 @@ function AuthModal({ mode, onClose }: { mode: AuthMode; onClose: () => void }) {
               <div className="h-1 w-full bg-gradient-to-r from-[#1c2d7a] via-[#17a4c2] to-[#1c2d7a]" />
 
               {/* Tab switcher */}
-              <div className="flex border-b border-border">
-                {(["login", "signup"] as const).map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setCurrent(tab)}
-                    className={`flex-1 py-3.5 text-sm font-semibold transition-colors duration-200 relative ${current === tab ? "text-[#1c2d7a]" : "text-muted-foreground hover:text-foreground"}`}
-                    style={{ fontFamily: "'Inter', sans-serif" }}
-                  >
-                    {tab === "login" ? "Sign In" : "Sign Up"}
-                    {current === tab && (
-                      <motion.div layoutId="auth-tab-indicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1c2d7a]" />
-                    )}
-                  </button>
-                ))}
-              </div>
+              {current !== "forgot" && (
+                <div className="flex border-b border-border">
+                  {(["login", "signup"] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setCurrent(tab)}
+                      className={`flex-1 py-3.5 text-sm font-semibold transition-colors duration-200 relative ${current === tab ? "text-[#1c2d7a]" : "text-muted-foreground hover:text-foreground"}`}
+                      style={{ fontFamily: "'Inter', sans-serif" }}
+                    >
+                      {tab === "login" ? "Sign In" : "Sign Up"}
+                      {current === tab && (
+                        <motion.div layoutId="auth-tab-indicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1c2d7a]" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Close */}
               <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
@@ -601,9 +785,11 @@ function AuthModal({ mode, onClose }: { mode: AuthMode; onClose: () => void }) {
               <div className="p-7 overflow-y-auto max-h-[80vh]">
                 <AnimatePresence mode="wait">
                   {current === "login" ? (
-                    <LoginForm key="login" onSwitch={() => setCurrent("signup")} onClose={onClose} />
-                  ) : (
+                    <LoginForm key="login" onSwitch={() => setCurrent("signup")} onForgot={() => setCurrent("forgot")} onClose={onClose} />
+                  ) : current === "signup" ? (
                     <SignupForm key="signup" onSwitch={() => setCurrent("login")} onClose={onClose} />
+                  ) : (
+                    <ForgotPasswordForm key="forgot" onBack={() => setCurrent("login")} />
                   )}
                 </AnimatePresence>
               </div>
@@ -734,10 +920,11 @@ function Navbar({ scrollY, onAuth }: { scrollY: number; onAuth: (m: AuthMode) =>
 
 // ─── Hero Slider ──────────────────────────────────────────────────────────────
 
-function Hero({ onAuth, recentProject }: { onAuth: (m: AuthMode) => void; recentProject?: HomeProject }) {
+function Hero({ onAuth, recentProject, slides }: { onAuth: (m: AuthMode) => void; recentProject?: HomeProject; slides?: Array<{ img: string; label: string; heading: string; sub: string }> }) {
   const [slide, setSlide] = useState(0);
   const [direction, setDirection] = useState(1);
-  const total = HERO_SLIDES.length;
+  const slideSet = slides && slides.length ? slides : HERO_SLIDES;
+  const total = slideSet.length;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const goTo = useCallback((next: number, dir: number) => {
@@ -755,12 +942,14 @@ function Hero({ onAuth, recentProject }: { onAuth: (m: AuthMode) => void; recent
 
   useEffect(() => { startTimer(); return () => { if (timerRef.current) clearTimeout(timerRef.current); }; }, [slide, startTimer]);
 
+  useEffect(() => { setSlide(0); }, [slides?.length]);
+
   const prev = () => { const n = (slide - 1 + total) % total; goTo(n, -1); };
   const next = () => { const n = (slide + 1) % total; goTo(n, 1); };
 
-  const s = HERO_SLIDES[slide];
-  const isProjectSlide = slide === 0 && recentProject;
-  const heroImage = isProjectSlide ? recentProject.coverImageUrl : undefined;
+  const s = slideSet[slide];
+  const isProjectSlide = Boolean(recentProject && slide === 0 && slideSet === HERO_SLIDES);
+  const heroImage = isProjectSlide ? recentProject?.coverImageUrl : s.img;
 
   return (
     <section
@@ -785,7 +974,7 @@ function Hero({ onAuth, recentProject }: { onAuth: (m: AuthMode) => void; recent
         >
           <img
             src={heroImage || `https://images.unsplash.com/${s.img}?w=1800&h=900&fit=crop&auto=format`}
-            alt={isProjectSlide ? recentProject.title : s.label}
+            alt={isProjectSlide ? recentProject?.title ?? s.label : s.label}
             className="absolute inset-0 w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0f172a]/88 via-[#101b2e]/75 to-[#0a1e25]/45" />
@@ -833,7 +1022,7 @@ function Hero({ onAuth, recentProject }: { onAuth: (m: AuthMode) => void; recent
 
       {/* Slide controls */}
       <div className="absolute bottom-28 left-10 lg:left-20 flex items-center gap-3">
-        {HERO_SLIDES.map((_, i) => (
+        {slideSet.map((_, i) => (
           <button
             key={i}
             onClick={() => goTo(i, i > slide ? 1 : -1)}
@@ -917,6 +1106,16 @@ function StatsBar({ projects }: { projects: HomeProject[] }) {
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
+// Shown instead of a random stock photo when a project has no uploaded cover image, so the
+// homepage never implies a real photo exists for a project that doesn't have one.
+function ProjectImagePlaceholder({ icon: Icon, className }: { icon: React.ElementType; className?: string }) {
+  return (
+    <div className={`flex items-center justify-center bg-gradient-to-br from-[#1c2d7a] to-[#17a4c2] ${className ?? ""}`}>
+      <Icon className="w-10 h-10 text-white/70" />
+    </div>
+  );
+}
+
 function ProjectDetails({ project, onClose, onInvest }: { project: HomeProject; onClose: () => void; onInvest: () => void }) {
   const Icon = project.icon;
 
@@ -939,7 +1138,11 @@ function ProjectDetails({ project, onClose, onInvest }: { project: HomeProject; 
           aria-labelledby="project-detail-title"
           onClick={event => event.stopPropagation()}
         >
-          <img src={project.coverImageUrl || `https://images.unsplash.com/${project.img}?w=1200&h=420&fit=crop&auto=format`} alt={project.title} className="w-full h-48 sm:h-56 object-cover" />
+          {project.coverImageUrl ? (
+            <img src={project.coverImageUrl} alt={project.title} className="w-full h-48 sm:h-56 object-cover" />
+          ) : (
+            <ProjectImagePlaceholder icon={Icon} className="w-full h-48 sm:h-56" />
+          )}
           <button onClick={onClose} aria-label="Close project details" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/90 text-[#0f172a] flex items-center justify-center shadow hover:bg-white transition-colors">
             <X className="w-4 h-4" />
           </button>
@@ -979,7 +1182,11 @@ function ProjectCard({ p, i, onView }: { p: HomeProject; i: number; onView: (pro
     <motion.article ref={ref} initial={{ opacity: 0, y: 28 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.55, delay: (i % 3) * 0.1 }}
       className="group bg-white border border-border rounded-lg overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col">
       <div className="relative h-44 overflow-hidden bg-muted">
-        <img src={p.coverImageUrl || `https://images.unsplash.com/${p.img}?w=600&h=280&fit=crop&auto=format`} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        {p.coverImageUrl ? (
+          <img src={p.coverImageUrl} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        ) : (
+          <ProjectImagePlaceholder icon={Icon} className="w-full h-full" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
         <span className="absolute top-3 left-3 bg-[#1c2d7a] text-white text-[10px] font-bold px-2.5 py-1 rounded tracking-wide uppercase" style={{ fontFamily: "'Inter', sans-serif" }}>{p.tag}</span>
         <span className="absolute bottom-3 right-3 bg-white text-[#1c2d7a] text-xs font-bold px-2.5 py-1 rounded" style={{ fontFamily: "'Inter', sans-serif" }}>{p.investment}</span>
@@ -1302,6 +1509,7 @@ function Landing() {
   const recentProject = projects
     .filter(project => Boolean(project.coverImageUrl))
     .sort((a, b) => String(b.updated ?? "").localeCompare(String(a.updated ?? "")))[0];
+  const heroSlides = buildHeroSlides(projects);
 
   const openAuth = (m: AuthMode) => setAuthMode(m);
   const closeAuth = () => setAuthMode(null);
@@ -1317,7 +1525,7 @@ function Landing() {
         <AnnouncementTicker />
         <Navbar scrollY={scrollY} onAuth={openAuth} />
       </div>
-      <Hero onAuth={openAuth} recentProject={recentProject} />
+      <Hero onAuth={openAuth} recentProject={recentProject} slides={heroSlides} />
       <StatsBar projects={projects} />
       <ProjectsSection projects={projects} onView={setSelectedProject} />
       <SectorsSection projects={projects} />

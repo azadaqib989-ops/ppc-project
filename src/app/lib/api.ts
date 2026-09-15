@@ -354,6 +354,16 @@ export const signupInvestor = (body: { name: string; email: string; password: st
 export const signupFocal = (body: { name: string; email: string; password: string; provinceId: string; organization?: string; title?: string }) =>
   json("/auth/signup-focal", "POST", body) as Promise<{ id: string; email: string; name: string; role: string; provinceId?: string }>;
 
+// ─── Password reset (forgot / OTP / change) ───────────────────────────────
+// These endpoints respond with { success, message } and no "data" payload, so callers
+// should rely on the promise resolving/rejecting rather than the resolved value.
+export const forgotPasswordApi = (email: string) => json("/auth/forgot-password", "POST", { email }) as Promise<void>;
+export const verifyOtpApi = (email: string, otp: string) => json("/auth/verify-otp", "POST", { email, otp }) as Promise<void>;
+export const resetPasswordApi = (email: string, otp: string, newPassword: string, confirmPassword: string) =>
+  json("/auth/reset-password", "POST", { email, otp, newPassword, confirmPassword }) as Promise<void>;
+export const changePasswordApi = (userId: string, oldPassword: string, newPassword: string, confirmPassword: string) =>
+  json(`/users/${userId}/change-password`, "PUT", { oldPassword, newPassword, confirmPassword }) as Promise<void>;
+
 export const getAdminOverview = () => request<ApiAdminOverview>("/admin/dashboard/overview");
 export function getAdminReviewQueue(params: Record<string, string | number | undefined> = {}) {
   const qs = new URLSearchParams();
